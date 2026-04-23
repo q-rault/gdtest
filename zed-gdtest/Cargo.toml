@@ -1,0 +1,14 @@
+[workspace]
+
+[package]
+name = "zed-gdtest"
+version = "0.1.0"
+edition = "2021"
+# This crate compiles to WebAssembly for the Zed extension host.
+# Build: cargo build --release --target wasm32-wasip1
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+zed_extension_api = "0.7"

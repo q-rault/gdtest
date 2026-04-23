@@ -1,0 +1,42 @@
+[package]
+name = "gdtest"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+description = "Fast external test runner for Godot 4 — Rust orchestrator + GDScript harness"
+readme = "../../README.md"
+keywords = ["godot", "gdscript", "testing", "test-runner"]
+categories = ["command-line-utilities", "development-tools::testing"]
+exclude = [
+    # No need to ship benchmark fixtures or internal harness sources on crates.io.
+    "../../benchmarks/**",
+    "../../spike/**",
+    "../../test/**",
+    "../../.github/**",
+]
+
+[[bin]]
+name = "gdtest"
+path = "src/main.rs"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dependencies]
+gdtest-proto.workspace = true
+gdtest-discovery.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "process", "io-util", "sync", "time", "signal"] }
+clap.workspace = true
+anyhow.workspace = true
+owo-colors.workspace = true
+num_cpus.workspace = true
+regex.workspace = true
+notify.workspace = true
+toml.workspace = true
+walkdir.workspace = true

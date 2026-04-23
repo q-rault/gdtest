@@ -1,0 +1,27 @@
+/target
+benchmarks/results/*.json
+benchmarks/results/*
+!benchmarks/results/.gitkeep
+Cargo.lock.bak
+.env
+.env.local
+
+# Godot
+.godot/
+*.import
+.gdtest_rewrite/
+export.cfg
+export_presets.cfg
+
+# macOS
+.DS_Store
+
+# Extension build artifacts
+*.vsix
+*.zip
+extension.wasm
+/zed-gdtest/target/
+
+# Node
+node_modules/
+vscode-gdtest/out/

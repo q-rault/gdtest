@@ -1,0 +1,20 @@
+; gdtest repo-root Godot project.
+; Hosts the worker harness so Godot can run it with `--path . -s harness/gdtest_worker.gd`.
+; The Rust workspace lives alongside and is ignored via .gdignore files in crates/ and target/.
+
+config_version=5
+
+[application]
+
+config/name="gdtest"
+config/features=PackedStringArray("4.6", "GL Compatibility")
+run/main_scene=""
+
+[autoload]
+
+EventBus="*res://test/support/event_bus.gd"
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"

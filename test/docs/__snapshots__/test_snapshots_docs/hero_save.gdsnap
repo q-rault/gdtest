@@ -1,0 +1,6 @@
+{
+"hp": 80,
+"inventory": ["sword", "potion"],
+"name": "Aria",
+"xp": 120
+}

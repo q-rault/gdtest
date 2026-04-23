@@ -1,0 +1,109 @@
+---
+title: SceneRunner API Reference
+description: Complete API reference for the SceneRunner — frame advance, input simulation, and properties.
+---
+
+`SceneRunner` is obtained by calling `scene_runner(packed_scene)` inside a test function. The runner instantiates the scene, adds it to the tree, and frees it automatically when the test ends.
+
+For a walkthrough with context, see [Testing Scenes & Input](/docs/scene-runner).
+
+---
+
+## Creating a runner
+
+```gdscript
+scene_runner(packed: PackedScene) -> SceneRunner
+```
+
+Instantiates the scene and adds it to the test tree. The instance is accessible via `runner.scene`.
+
+```gdscript
+var runner = scene_runner(load("res://levels/test_room.tscn"))
+var player = runner.scene.get_node("Player")
+```
+
+---
+
+## Properties
+
+| Property | Type | Description |
+|---|---|---|
+| `scene` | `Node` | The instantiated root node of the scene |
+
+---
+
+## Frame advance
+
+Both methods must be `await`ed.
+
+```gdscript
+await runner.simulate_frames(count: int = 1)
+await runner.simulate_seconds(duration: float)
+```
+
+`simulate_frames` — advances `count` process frames.
+
+`simulate_seconds` — advances the scene by `duration` seconds of game time.
+
+```gdscript
+await runner.simulate_frames(10)
+await runner.simulate_seconds(2.5)
+```
+
+---
+
+## Actions
+
+```gdscript
+runner.simulate_action_pressed(action: StringName)
+runner.simulate_action_released(action: StringName)
+```
+
+Fires an `InputMap` action event. `action` must match a name defined in your project's Input Map.
+
+Held actions are automatically released when the runner is freed — action state never leaks between tests.
+
+```gdscript
+runner.simulate_action_pressed("jump")
+await runner.simulate_frames(5)
+runner.simulate_action_released("jump")
+```
+
+---
+
+## Keyboard
+
+```gdscript
+runner.simulate_key_pressed(keycode: Key, modifiers: KeyModifierMask = 0)
+runner.simulate_key_released(keycode: Key)
+```
+
+`keycode` is a Godot `Key` constant (e.g., `KEY_SPACE`, `KEY_ENTER`).
+
+Available modifier flags: `KEY_MASK_CTRL`, `KEY_MASK_SHIFT`, `KEY_MASK_ALT`.
+
+```gdscript
+runner.simulate_key_pressed(KEY_SPACE)
+runner.simulate_key_pressed(KEY_Z, KEY_MASK_CTRL)
+runner.simulate_key_released(KEY_SPACE)
+```
+
+---
+
+## Mouse
+
+```gdscript
+runner.simulate_mouse_move(position: Vector2)
+runner.simulate_mouse_button_pressed(button: MouseButton, position: Vector2)
+runner.simulate_mouse_button_released(button: MouseButton, position: Vector2)
+```
+
+`button` is a Godot `MouseButton` constant (e.g., `MOUSE_BUTTON_LEFT`, `MOUSE_BUTTON_RIGHT`).
+
+```gdscript
+runner.simulate_mouse_move(Vector2(320, 240))
+runner.simulate_mouse_button_pressed(MOUSE_BUTTON_LEFT, Vector2(320, 240))
+runner.simulate_mouse_button_released(MOUSE_BUTTON_LEFT, Vector2(320, 240))
+```
+
+> **Headless limitation:** Mouse position events are routed by screen coordinates and require a display. In `--headless` mode, `Button` nodes hit-tested by mouse position will not respond. Use `Input.action_press` / `action_release` for UI interactions in headless tests.

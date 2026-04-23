@@ -1,0 +1,109 @@
+---
+title: Writing Your First Test
+description: Learn the shape of a gdtest test file and the hooks you will use most often.
+---
+
+## Smallest useful test
+
+A gdtest file is a normal GDScript file that:
+
+- extends `GdTest`
+- contains one or more `test_*` functions
+
+```gdscript
+# test/test_battle.gd
+extends GdTest
+
+func test_basic_hit() -> void:
+    assert_eq(Battle.calc_damage(10, 3), 7)
+```
+
+Run it with:
+
+```sh
+gdtest test/test_battle.gd
+```
+
+## Why use gdtest assertions?
+
+GDScript's built-in `assert()` stops the worker immediately on failure.
+
+```gdscript
+assert(Battle.calc_damage(10, 3) == 7)
+```
+
+gdtest assertions report the failure and continue with the rest of the suite.
+
+```gdscript
+assert_eq(Battle.calc_damage(10, 3), 7)
+```
+
+They also show expected and actual values in the failure output.
+
+## A basic file
+
+```gdscript
+extends GdTest
+
+func test_basic_hit() -> void:
+    assert_eq(Battle.calc_damage(10, 3), 7)
+
+func test_crit_doubles_damage() -> void:
+    assert_eq(Battle.calc_damage(10, 3, true), 14)
+
+func test_no_negative_damage() -> void:
+    assert_eq(Battle.calc_damage(1, 999), 0)
+```
+
+Each `test_*` function runs in a fresh instance.
+
+## Shared setup
+
+Use `before_each` and `after_each` when tests need the same object state:
+
+```gdscript
+extends GdTest
+
+var attacker: Character
+
+func before_each() -> void:
+    attacker = Character.new()
+    attacker.strength = 10
+
+func after_each() -> void:
+    attacker.free()
+
+func test_base_damage() -> void:
+    assert_eq(Battle.calc_damage(attacker, 3), 7)
+```
+
+Use `before_all` and `after_all` for one-time setup per file.
+
+## Grouping
+
+Inner classes named `describe_*` become sub-suites:
+
+```gdscript
+extends GdTest
+
+class describe_critical_hit extends GdTest:
+    func test_doubles_damage() -> void:
+        assert_eq(Battle.calc_damage(10, 3, true), 14)
+```
+
+Inner classes must also `extend GdTest`.
+
+## Skipping work in progress
+
+```gdscript
+func test_not_ready() -> void:
+    pending("not implemented yet")
+```
+
+To run one test while debugging:
+
+```sh
+gdtest --filter "test_basic_hit"
+```
+
+Next: [Assertions Reference](/docs/assertions)

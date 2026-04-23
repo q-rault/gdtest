@@ -1,0 +1,17 @@
+# Force LF line endings for all text files (Godot uses LF on all platforms)
+* text=auto eol=lf
+
+# Binaries — no conversion
+*.png binary
+*.wav binary
+*.ogg binary
+*.mp3 binary
+*.import binary
+
+# Keep the Asset Library / Asset Store archive focused on the installable addon.
+/** export-ignore
+/addons !export-ignore
+/addons/** !export-ignore
+/README.md !export-ignore
+/LICENSE-APACHE !export-ignore
+/LICENSE-MIT !export-ignore

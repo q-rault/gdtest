@@ -1,0 +1,85 @@
+---
+title: Evaluation Kit
+description: Scorecard, checklist, and API mapping templates for evaluating a project before migrating it to gdtest.
+---
+
+Use this kit when you want a repeatable answer to "can this test suite move to gdtest without surprises?"
+
+The deliverable has three parts:
+
+1. A 7-axis scorecard for setup friction, API coverage, migration effort, failure quality, performance, CI readiness, and advanced features.
+2. A metric collection checklist so every score links back to commands and raw evidence.
+3. An API mapping table that tracks direct ports, partial rewrites, and real gaps.
+
+## Templates
+
+The reusable files live in `benchmarks/templates/`:
+
+- `game-scorecard.md`
+- `metric-collection-checklist.md`
+- `api-mapping-template.md`
+- `gut-migration-notes.md`
+
+## The 7 axes
+
+| Axis | What to measure |
+| --- | --- |
+| A. Setup friction | Time and manual steps required to get `gdtest` running |
+| B. API coverage | How much of the source assertion/helper API maps cleanly |
+| C. Migration effort | Lines changed relative to the total test suite size |
+| D. Failure quality | Whether failures are actionable without extra debugging |
+| E. Performance | Runtime of `gdtest` versus the source runner |
+| F. CI readiness | Exit codes, headless operation, and JUnit XML quality |
+| G. Advanced features | Mocking, signals, async flows, and scene-heavy tests |
+
+## Recommended workflow
+
+1. Copy the three templates into your evaluation workspace for the target game.
+2. Run the collection checklist first and keep the raw outputs.
+3. Build the API mapping table while porting representative tests from the suite.
+4. Fill the scorecard only after every axis has evidence attached.
+5. Convert the total score into a verdict: `Drop-in`, `Light migration`, `Heavy migration`, or `Incompatible`.
+
+## GUT evaluation shortcut
+
+For GUT-based projects, the repository also ships `benchmarks/eval_gut_game.sh`.
+It collects a first pass of evidence for:
+
+- Axis A: setup timing and whether `gdtest --list` works after copying the harness
+- Axis B: assertion and helper inventory from the source suite
+- Axis E: wall-clock timing for the GUT baseline and the gdtest run
+- Axis F: JUnit XML generation and validation status
+
+The script writes its outputs under `benchmarks/results/<game>-gut-eval/`.
+Use `gut_porting_candidates.md` from that directory to choose representative
+files, then capture rewrite details in `benchmarks/templates/gut-migration-notes.md`.
+
+## Automated benchmark against your own suite
+
+After the evaluation, you can run an ongoing benchmark of your project's test
+suite against GUT and gdUnit4 using the `just bench-project` recipe.
+
+Create a manifest file listing each test file and its isolation mode:
+
+```
+# bench.manifest — one entry per line: path [file|test]
+test/test_combat.gd   file
+test/test_economy.gd  test
+test/test_signals.gd  file
+```
+
+Then run:
+
+```sh
+GODOT_PROJECT_PATH=~/my-game MANIFEST=~/my-game/bench.manifest just bench-project
+```
+
+This produces the same comparison table as the internal `just bench` target,
+with actual test counts probed from your suite.
+
+## Notes on evidence quality
+
+- Prefer measured timings over estimates.
+- Capture at least one real failing assertion output for axis D.
+- If a project only works under `--isolation=test`, call that out explicitly because it affects both performance and migration risk.
+- Keep workaround notes in the API mapping table instead of hiding them in narrative prose.

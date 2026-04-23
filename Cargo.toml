@@ -1,0 +1,39 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/gdtest-cli",
+    "crates/gdtest-proto",
+    "crates/gdtest-discovery",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/q-rault/gdtest"
+homepage = "https://github.com/q-rault/gdtest"
+authors = ["Quentin Rault"]
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "io-util", "sync", "time"] }
+clap = { version = "4", features = ["derive", "env"] }
+owo-colors = "4"
+walkdir = "2"
+num_cpus = "1"
+tree-sitter = "0.26"
+tree-sitter-gdscript = "6"
+regex = "1.11"
+notify = "8"
+anyhow = "1"
+thiserror = "2"
+toml = "0.8"
+
+gdtest-proto = { path = "crates/gdtest-proto" }
+gdtest-discovery = { path = "crates/gdtest-discovery" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

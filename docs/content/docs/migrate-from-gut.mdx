@@ -1,0 +1,292 @@
+---
+title: Migrating from GUT
+description: Step-by-step guide to migrating from GUT (Godot Unit Test) to gdtest.
+---
+
+**Migration is a single line change for most tests.**
+
+```gdscript
+extends GutTest # [!code --]
+extends GdTest  # [!code ++]
+```
+
+All assertion calls are identical. GDTest's native base class is `GdTest` — it provides the same flat assertion API as `GutTest`, so no other changes are needed for the assertion layer.
+
+## Automated transpiler
+
+gdtest ships a transpiler that handles the mechanical parts of migration automatically.
+
+The commands below use `just`, a command runner (similar to `make`). Install it
+from [github.com/casey/just](https://github.com/casey/just), then clone the
+gdtest repository to access its `Justfile`.
+
+```sh
+# Single file (prints to stdout)
+just transpile --source gut my_test_gut.gd > my_test.gd
+
+# Whole directory: rewrite every .gd file in-place
+just transpile --source gut test/cases/
+
+# Dry-run: see what would change without writing (exits 1 if any diff)
+just transpile --source gut --check test/cases/
+```
+
+**The `--source` directory mode rewrites files in place.** Use
+`git restore <dir>` or `git checkout -- <dir>` to revert if needed.
+
+The transpiler covers common assertions and lifecycle hooks automatically.
+Complex patterns — multi-line method chains, engine error assertions, whole-object
+signal watchers — may need manual cleanup; see the API map below.
+
+## What GdTest does
+
+`GdTest` is a thin base class that wraps `Gdt` (the core assertion singleton) with
+flat assertion helpers matching GUT's naming. It covers everything most GUT suites
+need: assertions, mocking, signal watching, scene helpers, and async waits. There is
+no separate compatibility shim for GUT because the surface is nearly identical.
+
+## API differences
+
+| GUT | GdTest | Notes |
+|---|---|---|
+| `extends GutTest` | `extends GdTest` | The only required change for most suites |
+| `await get_tree().process_frame` | `await wait_process_frame()` | |
+| `await get_tree().create_timer(t).timeout` | `await wait_physics_seconds(t)` | |
+| `gut.p("...")` / `gut_print(...)` | `print(...)` | |
+| `before_all()` | `GdtFixture.before_suite()` | Available through a fixture plugin |
+| `after_all()` | `GdtFixture.after_suite()` | Available through a fixture plugin |
+| `autofree(obj)` | `autoref(obj)` | Same cleanup intent, renamed helper |
+| `double(script)` | `mock(script)` | Same main use case |
+| `partial_double(script)` | `partial_mock(script)` | Same caveat |
+
+## Things to check
+
+**1. Autoload state leaks within a file**
+
+Under `--isolation=file` (default), one Godot process serves all tests in a
+file. Tests that mutate global singletons (`GameClock`, etc.) need
+`--isolation=test` to get a fresh process per test.
+
+**2. Signal lambda parameter count**
+
+GDScript 4 does not silently drop extra signal arguments. A signal with 3
+parameters must be connected with a lambda that accepts all 3:
+
+```gdscript
+# Wrong - crashes in GDScript 4
+node.my_signal.connect(func(): ...)
+
+# Correct
+node.my_signal.connect(func(_a, _b, _c): ...)
+```
+
+## Full API map
+
+### Status legend
+
+| Status | Meaning |
+| --- | --- |
+| Direct | Same API or a near drop-in wrapper |
+| Partial | Same intent, but the call shape or semantics changed |
+| Workaround | No direct helper, but pure GDScript migration is still straightforward |
+| Blocking | No pure-GDScript equivalent in the current harness |
+
+### Basic assertions
+
+| GUT | GdTest | Status | Notes |
+| --- | --- | --- | --- |
+| `assert_eq(a, b, msg)` | `assert_eq(a, b, msg)` | Direct | Same wrapper on `GdTest`. |
+| `assert_ne(a, b, msg)` | `assert_ne(a, b, msg)` | Direct | |
+| `assert_true(cond, msg)` | `assert_true(cond, msg)` | Direct | |
+| `assert_false(cond, msg)` | `assert_false(cond, msg)` | Direct | |
+| `assert_null(v, msg)` | `assert_null(v, msg)` | Direct | |
+| `assert_not_null(v, msg)` | `assert_not_null(v, msg)` | Direct | |
+| `assert_is(obj, klass, msg)` | `assert_is(obj, klass, msg)` | Direct | |
+| `fail_test(msg)` | `fail(msg)` | Direct | |
+| `pending(msg)` | `pending(msg)` | Direct | |
+| `pass_test(msg)` | none | Workaround | Use `assert_true(true, msg)` if an explicit pass marker matters. |
+| `assert_same(a, b, msg)` | `Gdt.expect_eq(a, b)` | Partial | Equality exists, but there is no dedicated strict reference-identity helper. |
+| `assert_not_same(a, b, msg)` | `assert_ne(a, b, msg)` | Partial | Same caveat as `assert_same`. |
+| `assert_typeof(v, t, msg)` | `assert_true(typeof(v) == t, msg)` | Workaround | No dedicated wrapper. |
+| `assert_not_typeof(v, t, msg)` | `assert_false(typeof(v) == t, msg)` | Workaround | No dedicated wrapper. |
+
+### Numeric and range assertions
+
+| GUT | GdTest | Status | Notes |
+| --- | --- | --- | --- |
+| `assert_gt(a, b, msg)` | `assert_gt(a, b, msg)` | Direct | |
+| `assert_gte(a, b, msg)` | `assert_gte(a, b, msg)` | Direct | |
+| `assert_lt(a, b, msg)` | `assert_lt(a, b, msg)` | Direct | |
+| `assert_lte(a, b, msg)` | `assert_lte(a, b, msg)` | Direct | |
+| `assert_between(v, lo, hi, msg)` | `assert_between(v, lo, hi, msg)` | Direct | Inclusive bounds on both sides. |
+| `assert_almost_eq(a, b, err, msg)` | `assert_almost_eq(a, b, tol, msg)` | Direct | `assert_approx()` alias also exists. |
+| `assert_not_between(v, lo, hi, msg)` | `assert_true(v < lo or v > hi, msg)` | Workaround | No dedicated negated helper. |
+| `assert_almost_ne(a, b, err, msg)` | `assert_false(absf(a - b) <= err, msg)` | Workaround | No dedicated negated helper. |
+
+### Collections, strings, and files
+
+| GUT | GdTest | Status | Notes |
+| --- | --- | --- | --- |
+| `assert_has(obj, elem, msg)` | `assert_has(collection, value, msg)` | Direct | |
+| `assert_does_not_have(obj, elem, msg)` | `assert_not_has(collection, value, msg)` | Partial | Same intent, renamed helper. |
+| `assert_eq_deep(v1, v2)` | `assert_eq(v1, v2)` | Partial | Uses GDScript `==`; there is no dedicated deep diff result object. |
+| `assert_ne_deep(v1, v2)` | `assert_ne(v1, v2)` | Partial | Same caveat. |
+| `compare_deep(v1, v2, max_diff)` | `assert_eq(v1, v2)` or manual diff | Workaround | No `CompareResult` equivalent. |
+| `assert_has_method(obj, meth, msg)` | `assert_true(obj.has_method(meth), msg)` | Workaround | No dedicated wrapper. |
+| `assert_string_contains(s, sub, match_case)` | `assert_string_contains(s, sub, msg)` | Partial | Base helper is case-sensitive. Case-insensitive variants exist on `Gdt.assert_str(...)`. |
+| `assert_string_starts_with(s, prefix, match_case)` | `assert_string_starts_with(s, prefix, msg)` | Partial | Same caveat. |
+| `assert_string_ends_with(s, suffix, match_case)` | `assert_string_ends_with(s, suffix, msg)` | Partial | Same caveat. |
+| `assert_file_exists(path)` | `assert_file(path).exists()` | Direct | File assertion chain exists in `GdtFileAssert`. |
+| `assert_file_does_not_exist(path)` | `assert_false(FileAccess.file_exists(path), msg)` | Workaround | No negative file chain helper. |
+| `assert_file_empty(path)` | `assert_file(path).is_empty()` | Direct | Works for files and directories. |
+| `assert_file_not_empty(path)` | content check or negate `is_empty()` manually | Workaround | No dedicated positive non-empty helper. |
+
+Bonus `gdtest` APIs with no GUT equivalent:
+
+- `Gdt.assert_str(s).contains_ignoring_case(...)`
+- `Gdt.assert_str(s).is_equal_ignoring_case(...)`
+- `Gdt.assert_array(arr).contains_exactly(...)`
+- `Gdt.assert_array(arr).contains_exactly_in_any_order(...)`
+- `Gdt.assert_dict(d).contains_keys([...])`
+- `assert_file(path).has_content(text)`
+- `create_temp_dir(name)` and `delete_temp_dir(name)`
+
+### Signals
+
+| GUT | GdTest | Status | Notes |
+| --- | --- | --- | --- |
+| `watch_signals(obj)` | `watch_signal(obj, sig_name)` | Partial | GUT watches every signal on the object. `gdtest` watches one signal at a time. |
+| `assert_signal_emitted(obj, sig, msg)` | `await assert_signal(obj, sig, timeout_ms)` | Partial | Assertion is async-native in `gdtest`. |
+| `assert_signal_not_emitted(obj, sig, msg)` | `await assert_no_signal(obj, sig, timeout_ms)` | Partial | |
+| `assert_signal_emit_count(obj, sig, n, msg)` | `await assert_signal_count(obj, sig, n, timeout_ms)` | Partial | Timeout is explicit. |
+| `assert_signal_emitted_with_parameters(obj, sig, params, idx)` | `await assert_signal_with_args(obj, sig, args, timeout_ms)` | Partial | Watcher indexing is manual through `SignalWatcher`. |
+| `get_signal_emit_count(obj, sig)` | `watcher.count` | Partial | Read from the returned watcher. |
+| `get_signal_parameters(obj, sig, idx)` | `watcher.emissions[idx]` or `watcher.last_args` | Partial | Read from the returned watcher. |
+| `clear_signal_watcher()` | `watcher.reset()` | Partial | Reset is per watcher, not global. |
+| `assert_has_signal(obj, sig, msg)` | `assert_true(obj.has_signal(sig), msg)` | Workaround | No dedicated helper. |
+| `assert_connected(...)` | `assert_true(obj.is_connected(sig, callable), msg)` | Workaround | No dedicated connection assertion helper. |
+| `assert_not_connected(...)` | `assert_false(obj.is_connected(sig, callable), msg)` | Workaround | No dedicated helper. |
+
+Bonus `gdtest` APIs with no GUT equivalent:
+
+- `assert_emitted_before(obj_a, sig_a, obj_b, sig_b)`
+- `assert_signal_order([{ obj, sig }, ...])`
+
+### Async and timing helpers
+
+| GUT | GdTest | Status | Notes |
+| --- | --- | --- | --- |
+| `wait_seconds(t, msg)` | `await wait_physics_seconds(t)` | Direct | |
+| `wait_for_signal(sig, max_time, msg)` | `await assert_signal(node, sig, timeout_ms)` | Partial | Waiting and assertion are coupled. |
+| `wait_physics_frames(n, msg)` | `await wait_physics_frames(n)` | Direct | |
+| `wait_until(callable, max_time, ...)` | `await wait_until(predicate, timeout_ms)` | Direct | |
+| `wait_while(callable, max_time, ...)` | `await wait_while(predicate, timeout_ms)` | Direct | |
+| `yield_for(seconds)` | `await wait_physics_seconds(seconds)` | Partial | Modernized API. |
+| `yield_frames(n)` | `await wait_physics_frames(n)` | Partial | Modernized API. |
+| `yield_to(signal, timeout)` | `await assert_signal(node, sig, timeout_ms)` | Partial | Modernized API. |
+| `wait_idle_frames(n, msg)` | `await wait_process_frame()` in a loop | Workaround | Only single-frame process waiting is exposed. |
+| `wait_process_frames(n, msg)` | `await wait_process_frame()` in a loop | Workaround | Same workaround. |
+| `did_wait_timeout()` | none | Workaround | Timeout becomes a failed assertion instead of a boolean side channel. |
+
+### Mocking and doubles
+
+| GUT | GdTest | Status | Notes |
+| --- | --- | --- | --- |
+| `double(script, strat)` | `mock(script)` | Partial | Same main use case, but no configurable strategy API. |
+| `partial_double(script, strat)` | `partial_mock(script)` | Partial | Same caveat. |
+| `double_singleton(name)` | `mock_singleton(name)` | Direct | |
+| `spy(real)` | `spy(real)` | Direct | |
+| `stub(inst, method, value)` | `stub(mock_obj, method, value)` | Direct | |
+| `get_call_parameters(obj, method, idx)` | `get_calls(mock_obj, method)[idx]` | Partial | `gdtest` exposes recorded calls directly. |
+| `get_call_count(obj, method, params)` | `get_calls(mock_obj, method).size()` | Partial | Parameter-specific filtering is manual. |
+| `assert_called(inst, method, params)` | `assert_called(mock_obj, method)` | Partial | Argument matching is split into `assert_called_with(...)`. |
+| `assert_not_called(inst, method, params)` | `assert_not_called(mock_obj, method)` | Partial | |
+| `assert_called_count(callable, n)` | `assert_call_count(mock_obj, method, n)` | Direct | |
+| `assert_called_with(inst, method, params)` | `assert_called_with(mock_obj, method, args)` | Direct | |
+| `partial_double_singleton(singleton)` | none | Workaround | Use `spy(real_singleton)` if the runtime shape allows it. |
+| `ignore_method_when_doubling(...)` | none | Workaround | No direct exclusion API. |
+| `register_inner_classes(script)` | none | Workaround | No equivalent registration step in the current harness. |
+| `get_double_strategy()` and `set_double_strategy()` | none | Workaround | Choose between `mock`, `partial_mock`, and `spy` instead. |
+
+Bonus `gdtest` APIs with no GUT equivalent:
+
+- `stub_with_args(mock_obj, method, args, value)`
+- `get_call_log(mock_obj)`
+- `assert_called_in_order(mock_obj, methods)`
+- `Gdt.any()`, `Gdt.any_int()`, `Gdt.matching(regex)`, `Gdt.satisfying(fn)`
+
+### Lifecycle, scene helpers, and utilities
+
+| GUT | GdTest | Status | Notes |
+| --- | --- | --- | --- |
+| `before_each()` | `before_each()` | Direct | Same test-file hook. |
+| `after_each()` | `after_each()` | Direct | Same test-file hook. |
+| `before_all()` | `GdtFixture.before_suite()` | Partial | Available through a fixture plugin, not directly on `GdTest`. |
+| `after_all()` | `GdtFixture.after_suite()` | Partial | Same caveat. |
+| `should_skip_script()` | `skip(msg)` in setup | Workaround | No script-level skip hook. |
+| `gut.p(msg)` or `gut_print(msg)` | `print(msg)` | Partial | Standard output only unless a reporter plugin consumes it. |
+| `add_child_autofree(node)` | `add_child_autofree(node)` | Direct | |
+| `autofree(obj)` | `autoref(obj)` | Partial | Same cleanup intent, different naming. |
+| `autoqfree(obj)` | `autoref(obj)` | Partial | `autoref` handles `Node` cleanup via `queue_free()`. |
+| `pause_before_teardown()` | none | Workaround | No CLI-oriented equivalent. |
+| `simulate(obj, times, delta)` | `set_physics_delta(delta)` plus `await wait_physics_frames(times)` | Partial | Advances the real engine instead of injecting calls directly. |
+| `replace_node(base, path, with)` | tree manipulation in test code | Workaround | No dedicated helper. |
+| `use_parameters(params)` | naming conventions or `Gdt.forall(...)` | Partial | Different parameterization model. |
+| `run_x_times(n)` | loop in the test body | Workaround | No dedicated helper. |
+| `is_passing()` or `is_failing()` | none | Workaround | No in-test suite state API. |
+| `get_fail_count()` or `get_pass_count()` | none | Workaround | Not exposed to test scripts. |
+| `skip_if_godot_version_lt(v)` | version check plus `skip(msg)` | Workaround | No dedicated helper. |
+
+Bonus `gdtest` APIs with no GUT equivalent:
+
+- `test_world()`
+- `assert_snapshot(actual, name)`
+- `GdtReporter` and `GdtFixture` plugin hooks
+- `assert_vec2_approx`, `assert_vec3_approx`, `assert_vec4_approx`, `assert_color_approx`, `assert_rect2_approx`
+
+### Properties, exports, warnings, and memory
+
+| GUT | GdTest | Status | Notes |
+| --- | --- | --- | --- |
+| `assert_exports(obj, prop, type)` | `assert_exports(obj, prop, type)` | Direct | |
+| `assert_property(obj, prop, default, new_val)` | `assert_property(obj, prop, default)` | Partial | Default-value check exists; setter verification stays manual. |
+| `assert_accessors(...)` | `assert_property(...)` plus manual setter checks | Workaround | No dedicated accessor helper. |
+| `assert_property_with_backing_variable(...)` | none | Workaround | No direct equivalent. |
+| `assert_push_error(text)` | `assert_push_error(text)` | Partial | Works only for `Gdt.push_error()`, not native `push_error()`. |
+| `assert_push_warning(text)` | `assert_push_warning(text)` | Partial | Same caveat. |
+| `assert_push_error_count(n)` | none | Workaround | No count assertion helper. |
+| `assert_push_warning_count(n)` | none | Workaround | No count assertion helper. |
+| `assert_engine_error(text)` | none | Blocking | No engine-level error hook in pure GDScript. |
+| `assert_engine_error_count(n)` | none | Blocking | Same limitation. |
+| `assert_freed(obj)` | `assert_false(is_instance_valid(obj))` | Workaround | No dedicated helper. |
+| `assert_not_freed(obj)` | `assert_true(is_instance_valid(obj))` | Workaround | No dedicated helper. |
+| `assert_no_new_orphans(msg)` | `assert_no_new_orphans(msg)` | Direct | |
+
+## Critical migration gaps
+
+### Hard gaps
+
+- `assert_engine_error(...)` and `assert_engine_error_count(...)` do not have a pure-GDScript equivalent in `gdtest`. GUT hooks the engine error channel; `gdtest` does not.
+- `watch_signals(obj)` has no whole-object watcher equivalent. `gdtest` requires one `watch_signal(obj, sig)` per signal.
+
+### Medium gaps
+
+- `assert_push_error(...)` and `assert_push_warning(...)` only observe `Gdt.push_error()` and `Gdt.push_warning()`. Existing production code using native `push_error()` or `push_warning()` must be adapted if those assertions matter.
+- `before_all()` and `after_all()` move into a `GdtFixture` plugin via `before_suite()` and `after_suite()`.
+- Multiple-process-frame waiting is manual because `wait_process_frame()` only exposes a single frame at a time.
+
+### Small gaps
+
+- Some GUT convenience helpers collapse into inline expressions.
+- Negative file assertions and suite pass/fail bookkeeping helpers are not first-class APIs.
+
+## Migration effort by pattern
+
+| Pattern in the GUT suite | Expected effort |
+| --- | --- |
+| Mostly `assert_eq`, `assert_true`, `assert_null` | Trivial |
+| Named-signal assertions | Low |
+| Mock-heavy tests | Low to medium |
+| `before_all` or `after_all` setup | Medium |
+| `simulate(...)`-driven tests | Medium |
+| Engine error assertions | High |

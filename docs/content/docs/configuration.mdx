@@ -1,0 +1,76 @@
+---
+title: Configuration
+description: gdtest.toml reference — persistent config with profile support.
+---
+
+## gdtest.toml
+
+Place `gdtest.toml` at your Godot project root (next to `project.godot`).
+gdtest searches for the file starting at your project root and walking up to
+parent directories — so you can place it at the top of a monorepo and have it
+apply to all sub-projects.
+
+Priority order: **CLI flag > env var > gdtest.toml > built-in default**
+
+```toml
+# gdtest.toml — all fields are optional
+
+harness    = "addons/gdtest/gdtest_worker.gd"  # path to gdtest_worker.gd
+jobs       = 4          # parallel workers (default: CPU count)
+reporter   = "pretty"   # "pretty" | "tap" | "junit"
+isolation  = "file"     # "file" | "test"
+timeout    = 5000       # per-test timeout in ms
+timeout_warn = 2000     # slow-test warning threshold in ms (no kill)
+fail_fast  = false      # stop after first failure
+retries    = 0          # re-run failing tests up to N extra times
+patterns   = ["test/**/*.gd", "**/*.test.gd"]  # discovery globs (these are the defaults)
+```
+
+## Profiles
+
+Profiles overlay the base config — useful for CI vs local settings:
+
+```toml
+# gdtest.toml
+harness = "addons/gdtest/gdtest_worker.gd"
+
+[profile.ci]
+reporter  = "junit"
+fail_fast = true
+jobs      = 4
+timeout   = 10000
+```
+
+Activate with `--profile`:
+
+```sh
+gdtest test/ --profile ci
+```
+
+## Environment variables
+
+Every setting has a corresponding env var that can substitute for a CLI flag:
+
+| Env var | CLI flag |
+|---|---|
+| `GODOT_EXE` | `--godot-exe` |
+| `GDTEST_HARNESS` | `--harness` |
+| `GDTEST_JOBS` | `-j` |
+| `GDTEST_REPORTER` | `--reporter` |
+| `GDTEST_ISOLATION` | `--isolation` |
+| `GDTEST_TIMEOUT` | `--timeout` |
+| `GDTEST_TIMEOUT_WARN` | `--timeout-warn` |
+| `GDTEST_FAIL_FAST` | `--fail-fast` |
+| `GDTEST_RETRIES` | `--retries` |
+| `GDTEST_UPDATE_SNAPSHOTS` | `--update-snapshots` |
+
+## CI example (GitHub Actions)
+
+```yaml
+- name: Run gdtest
+  env:
+    GODOT_EXE: /usr/bin/godot4
+  run: gdtest test/ --profile ci --no-auto-import
+```
+
+JUnit XML integrates with GitHub's test reporter when piped to a file.

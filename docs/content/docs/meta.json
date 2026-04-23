@@ -1,0 +1,23 @@
+{
+  "title": "gdtest",
+  "pages": [
+    "---Getting Started---",
+    "why-gdtest",
+    "installation",
+    "quickstart",
+    "---Guides---",
+    "guide-first-test",
+    "mocking",
+    "scene-runner",
+    "snapshots",
+    "---Reference---",
+    "assertions",
+    "ref-mock-api",
+    "ref-scene-runner-api",
+    "cli-reference",
+    "configuration",
+    "---Migration---",
+    "migrate-from-gut",
+    "migrate-from-gdunit4"
+  ]
+}

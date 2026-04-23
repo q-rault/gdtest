@@ -1,0 +1,99 @@
+---
+title: Mock API Reference
+description: Complete API reference for Gdt.mock() — creating doubles, stubs, call assertions, and call inspection.
+---
+
+All functions below are available as unqualified calls when your test class `extends GdTest`, or as `Gdt.*` static calls.
+
+For a walkthrough with context, see [Mocking Dependencies](/docs/mocking).
+
+---
+
+## Creating a mock
+
+```gdscript
+mock(SomeClass) -> Object
+mock(load("res://path/to/script.gd")) -> Object
+```
+
+Returns a runtime double of the given class. All public methods exist on the double but do nothing and return `null` by default. Use `stub` to override return values.
+
+```gdscript
+var ai = mock(EnemyAI)
+var ai = mock(load("res://enemy/enemy_ai.gd"))
+```
+
+---
+
+## Stubs
+
+```gdscript
+stub(mock_obj, "method_name", return_value)
+stub_with_args(mock_obj, "method_name", [arg1, arg2], return_value)
+```
+
+`stub` sets the default return value for a method regardless of arguments.
+
+`stub_with_args` sets the return value only when the method is called with arguments that exactly equal `[arg1, arg2]`. Calls with different arguments fall back to the plain `stub` value, or `null` if no plain stub is set.
+
+```gdscript
+stub(ai, "choose_action", "attack")
+stub_with_args(ai, "choose_action", [{"hp": 10}], "retreat")
+```
+
+---
+
+## Call assertions
+
+```gdscript
+assert_called(mock_obj, "method_name", msg = "")
+assert_not_called(mock_obj, "method_name", msg = "")
+assert_call_count(mock_obj, "method_name", expected_count, msg = "")
+assert_called_with(mock_obj, "method_name", [args], msg = "")
+```
+
+`assert_called` — passes if the method was called at least once.
+
+`assert_not_called` — passes if the method was never called.
+
+`assert_call_count` — passes if the method was called exactly `expected_count` times.
+
+`assert_called_with` — passes if *any* recorded call has arguments equal to `[args]`.
+
+```gdscript
+assert_called(ai, "choose_action")
+assert_call_count(ai, "choose_action", 1)
+assert_called_with(ai, "choose_action", [battle_state])
+```
+
+---
+
+## Inspecting calls
+
+```gdscript
+get_calls(mock_obj, "method_name") -> Array
+```
+
+Returns an `Array` where each element is an `Array` of arguments from one call.
+
+```gdscript
+var calls = get_calls(ai, "choose_action")
+# [[{"hp": 80}], [{"hp": 10}]]  — two calls, each with one argument
+
+assert_eq(calls[0][0]["hp"], 80)
+```
+
+---
+
+## Limitations
+
+- Methods prefixed with `_` are not replaced and retain their original implementation.
+- `static func` methods are not recorded.
+- Built-in Godot classes (`Node`, `Resource`, `Area2D`, etc.) cannot be mocked directly. Create a GDScript subclass and mock that instead:
+
+```gdscript
+class MockArea extends Area2D:
+    pass
+
+var area = mock(MockArea)
+```

@@ -1,0 +1,74 @@
+---
+title: Quickstart
+description: Install gdtest, copy the harness files, and run one test.
+---
+
+## 1. Install
+
+```sh
+cargo install gdtest
+export GODOT_EXE=/path/to/godot4
+```
+
+Requires Rust 1.85+ and Godot 4.3+.
+
+If you do not want to use Cargo, download a binary from [Installation](/docs/installation).
+
+## 2. Copy the harness files
+
+Copy these files into your Godot project:
+
+```text
+your-project/
+`-- addons/
+    `-- gdtest/
+        |-- gdtest_worker.gd
+        |-- gdt.gd
+        `-- gd_test.gd
+```
+
+They are included in each release archive and in `addons/gdtest/` in this repo.
+
+## 3. Write a test
+
+Create `test/test_battle.gd`:
+
+```gdscript
+extends GdTest
+
+func test_basic_hit() -> void:
+    assert_eq(Battle.calc_damage(10, 3), 7)
+
+func test_crit_doubles_damage() -> void:
+    assert_eq(Battle.calc_damage(10, 3, true), 14)
+```
+
+## 4. Run it
+
+```sh
+gdtest
+gdtest test/
+gdtest test/test_battle.gd
+gdtest test/ --filter "crit"
+gdtest test/ --watch
+```
+
+## 5. Optional config
+
+```toml
+# gdtest.toml
+harness = "addons/gdtest/gdtest_worker.gd"
+
+[profile.ci]
+reporter = "junit"
+fail_fast = true
+jobs = 4
+```
+
+```sh
+gdtest test/ --profile ci
+```
+
+See [Configuration](/docs/configuration) for the full file format.
+
+Next: [Writing Your First Test](/docs/guide-first-test)

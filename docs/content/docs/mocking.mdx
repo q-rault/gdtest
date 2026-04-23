@@ -1,0 +1,95 @@
+---
+title: Mocking Dependencies
+description: Isolate the code under test by replacing real dependencies with controlled doubles using Gdt.mock().
+---
+
+Your `Battle` class calls `EnemyAI.choose_action()` to decide what the enemy does next. When you test `Battle`, you don't want the AI's logic to interfere — you want to control exactly what it returns so your assertions are about `Battle`, not `EnemyAI`.
+
+That is what mocking is for: replace a real dependency with a double you control.
+
+## A complete example
+
+Suppose `EnemyAI` has a `choose_action` method that returns a string. Here is a test that stubs it to return `"attack"` and verifies that `Battle` responds correctly:
+
+```gdscript
+# test/test_battle_turn.gd
+extends GdTest
+
+func test_battle_applies_attack_damage() -> void:
+    var ai = mock(EnemyAI)
+    stub(ai, "choose_action", "attack")
+
+    var damage = Battle.resolve_turn(ai, {"hp": 100, "defense": 3})
+
+    assert_gt(damage, 0)
+    assert_called(ai, "choose_action")
+```
+
+`mock(EnemyAI)` creates a runtime double — all public methods exist but do nothing and return `null` by default. `stub` overrides a specific method to return a value you choose. `assert_called` verifies the method was actually invoked during the turn.
+
+## Asserting call count
+
+Use `assert_call_count` when the number of invocations matters — for example, to ensure a method is called exactly once per turn:
+
+```gdscript
+func test_ai_consulted_once_per_turn() -> void:
+    var ai = mock(EnemyAI)
+    stub(ai, "choose_action", "patrol")
+
+    Battle.resolve_turn(ai, {"hp": 100, "defense": 3})
+
+    assert_call_count(ai, "choose_action", 1)
+```
+
+## Stubbing based on arguments
+
+`stub_with_args` matches only calls whose arguments equal a specific set. Other calls fall back to the plain `stub` value:
+
+```gdscript
+func test_ai_retreats_when_hp_low() -> void:
+    var ai = mock(EnemyAI)
+    stub(ai, "choose_action", "attack")
+    stub_with_args(ai, "choose_action", [{"hp": 10, "defense": 0}], "retreat")
+
+    var action_low_hp = ai.choose_action({"hp": 10, "defense": 0})
+    var action_full_hp = ai.choose_action({"hp": 100, "defense": 5})
+
+    assert_eq(action_low_hp, "retreat")
+    assert_eq(action_full_hp, "attack")
+```
+
+## Inspecting recorded calls
+
+When you need to assert *what arguments* were passed, use `get_calls`:
+
+```gdscript
+func test_battle_passes_correct_state_to_ai() -> void:
+    var ai = mock(EnemyAI)
+    stub(ai, "choose_action", "attack")
+    var state = {"hp": 80, "defense": 5}
+
+    Battle.resolve_turn(ai, state)
+
+    var calls = get_calls(ai, "choose_action")
+    assert_eq(calls[0], [state])
+```
+
+`get_calls` returns an array of calls; each call is an array of arguments.
+
+## What cannot be mocked
+
+- Methods prefixed with `_` are not replaced — they keep the original implementation.
+- `static func` methods are not recorded.
+- Built-in Godot classes (`Node`, `Resource`, etc.) cannot be mocked directly. Mock a GDScript subclass instead:
+
+```gdscript
+# Instead of mock(Node2D) — which won't work:
+class MockEnemy extends Node2D:
+    pass
+
+var enemy = mock(MockEnemy)
+```
+
+---
+
+For the complete mock API — all signatures, parameters, and return types — see [Mock API Reference](/docs/ref-mock-api).

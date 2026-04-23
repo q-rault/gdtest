@@ -1,0 +1,228 @@
+---
+title: Migrating from gdUnit4
+description: Step-by-step guide to migrating from gdUnit4 to gdtest, with an optional compatibility shim for incremental migration.
+---
+
+gdtest provides two migration paths depending on how much of the gdUnit4 API your
+suites use:
+
+| Path | Base class | When to use |
+|---|---|---|
+| **Native** | `extends GdTest` | New suites, or suites that only use flat assertions |
+| **Compatibility shim** | `extends GdTestCompatGdUnit` | Suites that rely on fluent chains, lifecycle aliases, or typed asserters |
+
+## What GdTestCompatGdUnit does
+
+`GdTestCompatGdUnit` is an intermediary base class that lets you run your existing
+gdUnit4 suites in gdtest without a full rewrite. It provides:
+
+- **Lifecycle aliases** — `before()` / `after()` (suite-level), `before_test()` / `after_test()` (per-test), matching gdUnit4's naming exactly.
+- **Typed fluent asserters** — `assert_that(v)`, `assert_bool(v)`, `assert_int(v)`, `assert_float(v)`, `assert_str(v)`, `assert_array(v)`, `assert_dict(v)`, `assert_object(v)`, `assert_vector2(v)`, `assert_vector3(v)`, each returning a fluent chain with the common gdUnit4 chain methods (`is_equal`, `is_greater`, `is_zero`, `contains_exactly`, etc.).
+- **Flat assertions** — `assert_eq`, `assert_true`, `assert_false`, `assert_null`, `assert_gt`, `assert_almost_eq`, and the rest, forwarded to `Gdt`.
+- **Utilities** — `auto_free`, `add_child_autofree`, `create_temp_dir`, `scene_runner`, and all mock helpers.
+
+Think of `GdTestCompatGdUnit` as a migration step, not a long-term home. When you
+are ready to adopt native gdtest style, rewrite the fluent chains to flat assertions
+and switch to `extends GdTest`.
+
+## Automated transpiler
+
+gdtest ships a transpiler that handles the mechanical parts of migration automatically.
+
+The commands below use `just`, a command runner (similar to `make`). Install it
+from [github.com/casey/just](https://github.com/casey/just), then clone the
+gdtest repository to access its `Justfile`.
+
+```sh
+# Single file (prints to stdout)
+just transpile --source gdunit4 my_test_gdunit4.gd > my_test.gd
+
+# Whole directory: rewrite every .gd file in-place
+just transpile --source gdunit4 test/cases/
+
+# Dry-run: see what would change without writing (exits 1 if any diff)
+just transpile --source gdunit4 --check test/cases/
+```
+
+**The `--source` directory mode rewrites files in place.** Use
+`git restore <dir>` or `git checkout -- <dir>` to revert if needed.
+
+The transpiler applies these rewrites automatically:
+
+| Pattern | Rewritten to |
+|---|---|
+| `extends GdUnitTestSuite` | `extends GdTestCompatGdUnit` |
+| `class_name …` | *(removed)* |
+| `simulate_action_release(…)` | `simulate_action_released(…)` |
+| `simulate_mouse_button_release(…)` | `simulate_mouse_button_released(…)` |
+| `simulate_key_release(…)` | `simulate_key_released(…)` |
+| `await_input_processed()` | `wait_process_frame()` |
+| `scene_runner("res://foo.tscn")` | `scene_runner(load("res://foo.tscn"))` *(string literal only)* |
+| `verify(mock, n).method()` | `assert_call_count(mock, "method", n)` |
+| `verify(mock).method()` | `assert_called(mock, "method")` |
+
+Patterns the transpiler flags but does not rewrite: `clean_temp_dir()`,
+`monitor_signals()`, `verify_signal()`. Patterns it marks as blocked with no
+gdtest equivalent: `@GdUnitTestParameters`, `GdUnitTuple`, `@GdUnitMock`,
+`RETURN_DEEP_STUB`, `verify_no_more_interactions()`, `reset(mock)`,
+`InputFactory.*`, `simulate_mouse_move_relative()`, `simulate_screen_touch_*`,
+`override_failure_message()`, `append_failure_message()`.
+
+## SceneRunner
+
+gdUnit4's `GdUnitSceneRunner` requires a display. gdtest's
+[SceneRunner](/docs/scene-runner) uses `Input.action_press` / `action_release`
+and works fully headless. No `--ignoreHeadlessMode` flag is needed.
+
+The main migration caveat is input shape: `scene_runner(...)` on
+`GdTestCompatGdUnit` expects a `PackedScene`, not a scene path string.
+
+```gdscript
+# gdUnit4
+var runner = scene_runner("res://ui/panel.tscn")
+
+# gdtest (both paths)
+var runner = scene_runner(load("res://ui/panel.tscn"))
+```
+
+## Performance
+
+gdtest runs ~1.9× faster than gdUnit4 at `-j 4` (24.4 s → 13.0 s, 61 tests). See the
+[benchmark table](/docs#benchmarks) on the overview page.
+
+## API comparison
+
+The table below shows, for each gdUnit4 call, what the compatibility shim preserves
+and what the equivalent native gdtest call looks like.
+
+### Entry point and lifecycle
+
+| gdUnit4 | GdTestCompatGdUnit | GdTest (native) |
+| --- | --- | --- |
+| `extends GdUnitTestSuite` | `extends GdTestCompatGdUnit` | `extends GdTest` |
+| `before()` | `before()` (aliased to suite-level hook) | `before_all()` |
+| `after()` | `after()` (aliased to suite-level hook) | `after_all()` |
+| `before_test()` | `before_test()` (aliased to per-test hook) | `before_each()` |
+| `after_test()` | `after_test()` (aliased to per-test hook) | `after_each()` |
+
+### Fluent and typed assertions
+
+`GdTestCompatGdUnit` preserves the gdUnit4 fluent chain API. Migrating to native
+`GdTest` means replacing chains with flat assertions on `Gdt`.
+
+| gdUnit4 | GdTestCompatGdUnit | GdTest (native) | Notes |
+| --- | --- | --- | --- |
+| `assert_that(v).is_equal(e)` | `assert_that(v).is_equal(e)` | `assert_eq(v, e)` | |
+| `assert_that(v).is_not_equal(e)` | `assert_that(v).is_not_equal(e)` | `assert_ne(v, e)` | |
+| `assert_that(v).is_greater(e)` | `assert_that(v).is_greater(e)` | `assert_gt(v, e)` | |
+| `assert_that(v).is_greater_equal(e)` | `assert_that(v).is_greater_equal(e)` | `assert_gte(v, e)` | |
+| `assert_that(v).is_less(e)` | `assert_that(v).is_less(e)` | `assert_lt(v, e)` | |
+| `assert_that(v).is_less_equal(e)` | `assert_that(v).is_less_equal(e)` | `assert_lte(v, e)` | |
+| `assert_that(v).is_null()` | `assert_that(v).is_null()` | `assert_null(v)` | |
+| `assert_that(v).is_not_null()` | `assert_that(v).is_not_null()` | `assert_not_null(v)` | |
+| `assert_that(v).is_zero()` | `assert_that(v).is_zero()` | `assert_eq(v, 0)` | |
+| `assert_that(v).is_negative()` | `assert_that(v).is_negative()` | `assert_lt(v, 0)` | |
+| `assert_that(v).is_in(arr)` | `assert_that(v).is_in(arr)` | `assert_has(arr, v)` | |
+| `assert_int(v).is_between(lo, hi)` | `assert_int(v).is_between(lo, hi)` | `assert_between(v, lo, hi)` | |
+| `assert_float(v).is_equal_approx(e, tol)` | `assert_float(v).is_equal_approx(e, tol)` | `assert_almost_eq(v, e, tol)` | |
+| `assert_bool(x).is_true()` | `assert_bool(x).is_true()` | `assert_true(x)` | |
+| `assert_bool(x).is_false()` | `assert_bool(x).is_false()` | `assert_false(x)` | |
+| `assert_str(v).contains(s)` | `assert_str(v).contains(s)` | `assert_string_contains(v, s)` | |
+| `assert_str(v).starts_with(s)` | `assert_str(v).starts_with(s)` | `assert_string_starts_with(v, s)` | |
+| `assert_str(v).ends_with(s)` | `assert_str(v).ends_with(s)` | `assert_string_ends_with(v, s)` | |
+| `assert_str(v).is_equal_ignoring_case(e)` | `assert_str(v).is_equal_ignoring_case(e)` | `Gdt.assert_str(v).is_equal_ignoring_case(e)` | |
+| `assert_array(v).contains_exactly(arr)` | `assert_array(v).contains_exactly(arr)` | `Gdt.assert_array(v).contains_exactly(arr)` | |
+| `assert_array(v).contains_exactly_in_any_order(arr)` | `assert_array(v).contains_exactly_in_any_order(arr)` | `Gdt.assert_array(v).contains_exactly_in_any_order(arr)` | |
+| `assert_dict(v).contains_keys(keys)` | `assert_dict(v).contains_keys(keys)` | `Gdt.assert_dict(v).contains_keys(keys)` | |
+| `assert_dict(v).contains_key_value(k, v)` | `assert_dict(v).contains_key_value(k, v)` | `Gdt.assert_dict(v).contains_key_value(k, v)` | |
+| `override_failure_message(msg)` | none | none | Gap — no fluent failure-message override. |
+| `assert_str(v).matches(regex)` | none | none | Gap — use a manual regex check. |
+| `assert_array(v).contains_same(...)` | none | none | Gap — no reference-identity collection assertion. |
+| `assert_array(v).extract(...)` | none | none | Gap — no extractor helper. |
+
+### Flat assertions and utilities
+
+Both `GdTestCompatGdUnit` and `GdTest` expose these under the same names.
+
+| gdUnit4 | GdTestCompatGdUnit / GdTest | Notes |
+| --- | --- | --- |
+| `assert_eq`, `assert_ne`, `assert_true`, `assert_false` | Same names | Forwarded to `Gdt`. |
+| `assert_gt`, `assert_gte`, `assert_lt`, `assert_lte` | Same names | Forwarded to `Gdt`. |
+| `assert_almost_eq(a, b, tol)` | Same name | Forwarded to `Gdt.expect_approx()`. |
+| `assert_file(path)` | Same name | File assertion chain. |
+| `auto_free(obj)` | Same name | Aliased to `Gdt.autoref(obj)`. |
+| `add_child_autofree(node)` | Same name | |
+| `instantiate_scene(packed)` | Same name | |
+| `create_temp_dir(name)` | Same name | |
+| `clean_temp_dir()` | `delete_temp_dir(name)` | Partial — delete is supported, not the exact gdUnit4 shape. |
+
+### Signals
+
+| gdUnit4 | GdTestCompatGdUnit | GdTest (native) | Notes |
+| --- | --- | --- | --- |
+| `assert_signal(node).is_emitted("sig")` | `await assert_signal(node).is_emitted("sig")` | `await assert_signal(node, "sig")` | |
+| `assert_signal(node).is_not_emitted("sig")` | `await assert_signal(node).is_not_emitted("sig")` | `await assert_no_signal(node, "sig")` | |
+| `assert_signal(node).is_emitted("sig", a, b)` | `await Gdt.assert_signal_with_args(node, "sig", [a, b])` | `await assert_signal_with_args(node, "sig", [a, b])` | Partial — not the same fluent call shape. |
+| `assert_signal_count(node, sig, n)` | `await assert_signal_count(node, sig, n)` | `await assert_signal_count(node, sig, n)` | |
+| `monitor_signals(obj)` | `watch_signal(obj, sig)` | `watch_signal(obj, sig)` | Partial — `gdtest` watches one named signal at a time. |
+| `assert_signal(node).is_signal_exists("sig")` | `assert_true(node.has_signal("sig"))` | `assert_true(node.has_signal("sig"))` | No dedicated signal-existence assertion. |
+
+### Mocking and doubles
+
+| gdUnit4 | GdTestCompatGdUnit / GdTest | Notes |
+| --- | --- | --- |
+| `mock(MyScript)` | `mock(MyScript)` | Direct. |
+| `spy(real)` | `spy(real)` | Direct. |
+| `partial_mock(MyScript)` | `partial_mock(MyScript)` | Direct. |
+| `stub(obj, "method", value)` | `stub(obj, "method", value)` | Direct. |
+| `stub_with_args(obj, "method", args, value)` | `stub_with_args(obj, "method", args, value)` | Direct. |
+| `assert_called`, `assert_not_called`, `assert_call_count`, `assert_called_with` | Same names | Forwarded to `Gdt`. |
+| `verify(mock, times).method()` | `assert_call_count(mock, "method", times)` | Partial — different API shape. |
+| `verify_no_interactions(mock)` | per-method assertions | Partial — no single "zero interaction" assertion. |
+| `mock(MyScript, RETURN_DEEP_STUB)` | none | Gap — no deep-stub strategy. |
+| `reset(mock)` | recreate mock | Gap — no reset helper. |
+
+### SceneRunner and input simulation
+
+| gdUnit4 | GdTestCompatGdUnit / GdTest | Notes |
+| --- | --- | --- |
+| `scene_runner(scene_or_path)` | `scene_runner(load("res://..."))` | Partial — accepts `PackedScene`, not a path string. |
+| `simulate_key_pressed(KEY_X)` | `simulate_key_pressed(KEY_X, modifiers)` | Partial — modifiers are a bitmask. |
+| `simulate_key_release(KEY_X)` | `simulate_key_released(KEY_X)` | Partial — renamed. |
+| `simulate_action_pressed(action)` | `simulate_action_pressed(action)` | Direct. |
+| `simulate_action_release(action)` | `simulate_action_released(action)` | Partial — renamed. |
+| `simulate_mouse_button_pressed(btn)` | `simulate_mouse_button_pressed(btn, pos)` | Partial — adds optional position. |
+| `simulate_mouse_button_release(btn)` | `simulate_mouse_button_released(btn)` | Partial — renamed. |
+| `simulate_mouse_move(pos)` | `simulate_mouse_move(pos)` | Direct. |
+| `simulate_frames(n)` | `simulate_frames(n)` | Direct. |
+| `simulate_frames(n, delta_ms)` | `Gdt.set_physics_delta(dt)` then `simulate_frames(n)` | Partial — custom delta is configured separately. |
+| `await_input_processed()` | `await wait_process_frame()` | Partial — no dedicated SceneRunner helper. |
+| `simulate_mouse_move_relative(...)` | none | Gap — not implemented. |
+| `simulate_screen_touch_*` | none | Gap — touch simulation not implemented. |
+
+### Parameterized tests and annotations
+
+| gdUnit4 | gdtest | Notes |
+| --- | --- | --- |
+| `@GdUnitTestParameters(...)` | none | Gap — no annotation-driven parameterized tests. |
+| `GdUnitTuple` / `tuple(...)` | none | Gap — missing together with parameterized tests. |
+| `@GdUnitMock` | none | Gap — no annotation-driven mock injection. |
+| `@GdUnitFuzzer` | `Gdt.forall([...], fn, runs)` | Partial — property-based testing exists, not as a gdUnit4 annotation. |
+
+## Recommended migration path
+
+1. Start with `extends GdTestCompatGdUnit` (not `extends GdTest`) when the source
+   suite uses gdUnit4 fluent assertions or lifecycle names.
+2. Keep tests that only use the verified compat surface unchanged except for the
+   base class swap.
+3. Rewrite the remaining partial APIs mechanically:
+   - `verify(mock, n).method()` → `assert_call_count(mock, "method", n)`
+   - `scene_runner("res://foo.tscn")` → `scene_runner(load("res://foo.tscn"))`
+   - `simulate_*_release` → the `*_released` gdtest names
+4. Split out real gaps into follow-up work instead of forcing a one-shot migration:
+   - deep stubs
+   - annotation-driven parameterized tests
+   - all-signal monitoring
+   - touch and animated pointer helpers
+5. When suites are stable, optionally convert fluent chains to flat assertions and
+   switch to `extends GdTest` to drop the compat dependency entirely.

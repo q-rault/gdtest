@@ -1,0 +1,90 @@
+---
+title: Snapshot Testing
+description: Capture serialized values on the first run and detect unexpected changes on every run after.
+---
+
+Your `SaveGame` system serialises the hero's state to a `Dictionary`. One day someone adds a field, removes one, or changes a key name. The save is now silently incompatible with existing files. A snapshot test catches this the moment the output changes.
+
+## How it works
+
+Call `assert_snapshot(value)` in your test. The first time it runs, gdtest writes the serialized value to a `.gdsnap` file and the test passes. Every subsequent run compares the current value against that stored file. If they differ, the test fails with a diff.
+
+```gdscript
+# test/test_save_game.gd
+extends GdTest
+
+func test_hero_save_format() -> void:
+    var hero = Hero.new()
+    hero.name = "Aria"
+    hero.hp = 80
+    hero.xp = 120
+    hero.inventory = ["sword", "potion"]
+
+    assert_snapshot(SaveGame.serialize(hero))
+```
+
+First run — snapshot created, test passes:
+
+```
+✓ test/test_save_game.gd :: test_hero_save_format   (18 µs)
+```
+
+After a change that removes `"inventory"` from the output — test fails with a diff:
+
+```
+✗ test/test_save_game.gd :: test_hero_save_format
+  → snapshot mismatch 'test_hero_save_format/0':
+    stored: {"hp":80,"inventory":["sword","potion"],"name":"Aria","xp":120}
+    actual: {"hp":80,"name":"Aria","xp":120}
+    (run with --update-snapshots to accept)
+```
+
+## Multiple snapshots in one test
+
+Pass a name when a single test function captures more than one snapshot:
+
+```gdscript
+func test_save_stages() -> void:
+    var hero = Hero.new()
+    hero.hp = 100
+
+    assert_snapshot(SaveGame.serialize(hero), "initial")
+
+    hero.hp = 50
+    hero.inventory.append("shield")
+    assert_snapshot(SaveGame.serialize(hero), "after_battle")
+```
+
+Names must be unique within the test function. Omit the name to use an auto-incrementing index (`"0"`, `"1"`, …).
+
+## Where snapshot files live
+
+Snapshots are stored next to their test file in a `__snapshots__/` subdirectory:
+
+```
+test/
+├── test_save_game.gd
+└── __snapshots__/
+    └── test_save_game/
+        ├── test_hero_save_format/
+        │   └── 0.gdsnap
+        └── test_save_stages/
+            ├── initial.gdsnap
+            └── after_battle.gdsnap
+```
+
+Commit the `__snapshots__/` directory. The files are plain text — diffs are human-readable in code review.
+
+## Updating snapshots
+
+When you intentionally change a serialized value (adding a field, renaming a key), update the stored snapshots to match:
+
+```sh
+gdtest test/ --update-snapshots
+```
+
+This rewrites every `.gdsnap` file with the current output. Run it once after an intentional change, review the diff in git, then commit.
+
+## Supported types
+
+Values are serialized with GDScript's `var_to_str()`. Supported types include `int`, `float`, `String`, `bool`, `null`, `Array`, `Dictionary`, `Vector2`, `Vector3`, `Vector4`, `Color`, `Rect2`, and most Godot built-in value types.

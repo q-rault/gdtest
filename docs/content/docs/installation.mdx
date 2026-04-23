@@ -1,0 +1,88 @@
+---
+title: Installation
+description: Install the CLI, copy the harness files, and add optional editor integrations.
+---
+
+## 1. Install the CLI
+
+Via Cargo:
+
+```sh
+cargo install gdtest
+```
+
+Requires Rust 1.85+.
+
+Or download a binary from the [GitHub releases page](https://github.com/q-rault/gdtest/releases):
+
+| Platform | Archive |
+| --- | --- |
+| macOS arm64 | `gdtest-*-aarch64-apple-darwin.tar.gz` |
+| macOS x86_64 | `gdtest-*-x86_64-apple-darwin.tar.gz` |
+| Linux x86_64 | `gdtest-*-x86_64-unknown-linux-gnu.tar.gz` |
+| Windows x86_64 | `gdtest-*-x86_64-pc-windows-msvc.zip` |
+
+Put the `gdtest` binary on your `PATH`.
+
+Set the Godot executable:
+
+```sh
+export GODOT_EXE=/path/to/godot4
+```
+
+On Windows, set `GODOT_EXE` as a user environment variable.
+
+## 2. Copy the runtime addon
+
+Copy `addons/gdtest/` into your Godot project:
+
+```text
+your-project/
+`-- addons/
+    `-- gdtest/
+        |-- gdtest_worker.gd
+        |-- gdt.gd
+        `-- gd_test.gd
+```
+
+The runtime addon is also included in each release archive.
+
+## 3. Optional editor integrations
+
+Godot editor plugin:
+
+1. Copy `addons/gdtest_editor/` into your project root.
+2. Enable **gdtest Editor** in Project -> Project Settings -> Plugins.
+
+VS Code:
+
+```sh
+code --install-extension vscode-gdtest-*.vsix
+```
+
+Optional settings:
+
+```json
+{
+  "gdtest.executablePath": "gdtest",
+  "gdtest.testDirectory": "test/"
+}
+```
+
+Zed:
+
+1. Download `extension.wasm` from a release.
+2. Put it next to `extension.toml` and `tasks.json` from `zed-gdtest/`.
+3. Place the folder in your Zed extensions directory.
+
+- macOS / Linux: `~/.config/zed/extensions/gdtest/`
+- Windows: `%APPDATA%\\Zed\\extensions\\gdtest\\`
+
+## Verify
+
+```sh
+gdtest --version
+gdtest test/
+```
+
+Next: [Quickstart](/docs/quickstart)

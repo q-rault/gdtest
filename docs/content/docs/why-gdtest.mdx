@@ -1,0 +1,41 @@
+---
+title: Why gdtest
+---
+
+gdtest is for teams that want fast, scriptable, command-line test runs for Godot 4.
+
+## Why pick it
+
+- You want to run tests regardless you're in Godot editor / in the terminal / in a CI job
+- You want parallel execution for larger suites
+- You want failures reported without losing the whole run when one test crashes Godot
+- You want a lightweight setup based on normal GDScript files
+- You want helpers for snapshots, mocking, and input-driven scene tests
+- It's easy to adopt : two transpilers have been created to help you try the gdtest library if you're coming from GUT / gdUnit4.
+
+## What it feels like
+
+- Test files are regular GDScript files
+- Most suites use `extends GdTest`
+- Test functions are named `test_*`
+- You run them with `gdtest`
+
+```gdscript
+extends GdTest
+
+func test_basic_hit() -> void:
+    assert_eq(Battle.calc_damage(10, 3), 7)
+```
+
+## When it is a strong fit
+
+- You already work from the terminal
+- You need CI-friendly test runs
+- Your suite is large enough that parallel workers matter
+- You want a simpler workflow than editor-driven test runners
+
+## Next steps
+
+- [Installation](/docs/installation)
+- [Quickstart](/docs/quickstart)
+- [Writing Your First Test](/docs/guide-first-test)

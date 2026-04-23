@@ -1,0 +1,115 @@
+---
+title: Architecture
+description: How gdtest discovers tests, dispatches them, and recovers from crashes.
+---
+
+## Overview
+
+```
+┌──────────────┐   stdin: JSON commands    ┌────────────────┐
+│  gdtest CLI  │ ────────────────────────▶ │  Godot worker  │
+│    (Rust)    │ ◀──────────────────────── │   (harness.gd) │
+│  N parallel  │  stdout: GDTEST_OUT JSON  │  one per job   │
+└──────────────┘  stderr: Godot log noise  └────────────────┘
+```
+
+The CLI is a Rust binary. Workers are persistent Godot processes.
+Tests are dispatched as JSON commands over stdin and results come back
+as JSON events on stdout, prefixed with `GDTEST_OUT:`.
+
+## Discovery
+
+Test discovery runs entirely in Rust using
+[tree-sitter-gdscript](https://crates.io/crates/tree-sitter-gdscript) — no
+Godot process needed. A directory walk finds `test_*.gd` files; tree-sitter
+parses each one and extracts every `func test_*()` declaration in &lt;1 ms per file.
+
+Discovery also handles:
+- `xtest_*` functions → marked as always-skip before workers start
+- `ftest_*` functions → only focus tests in that file are enqueued
+- Inner classes with `test_*` functions (describe blocks)
+
+## Worker pool
+
+When the pool starts it spawns `min(jobs, test_count)` Godot processes. Each
+worker process runs `gdtest_worker.gd` as a `SceneTree` subclass.
+
+The worker's `_init()` sends `{"event":"ready"}` on stdout. The Rust pool
+waits for this handshake before dispatching any work. If stdout closes before
+the handshake arrives, the worker is marked crashed. Recent startup stderr is
+attached to the crash message when available; on Windows, where Godot 4.6.x is
+not stable with piped stderr, the crash message includes the `--log-file` path
+used for that worker.
+
+Work items (a `(script, func)` pair) are stored in a shared queue. Idle workers
+pull from the queue. This gives dynamic load balancing for free — no pre-sharding
+needed (though `--partition` is available for multi-machine CI).
+
+## Protocol
+
+Commands (orchestrator → worker, on stdin):
+
+```json
+{"cmd":"run_test","script":"res://test/foo.gd","func":"test_bar"}
+{"cmd":"run_file","script":"res://test/foo.gd"}
+{"cmd":"shutdown"}
+```
+
+Events (worker → orchestrator, on stdout, prefixed `GDTEST_OUT:`):
+
+```json
+{"event":"ready"}
+{"event":"test_start","name":"test_bar"}
+{"event":"test_pass","name":"test_bar","us":1234}
+{"event":"test_fail","name":"test_bar","us":42,"failures":["expected 1 == 2"]}
+{"event":"test_error","name":"test_bar","message":"SCRIPT ERROR: ..."}
+{"event":"test_skip","name":"test_bar","message":""}
+{"event":"test_pending","name":"test_bar","message":"not implemented"}
+```
+
+## Worker internals
+
+The worker script (`gdtest_worker.gd`) extends `SceneTree`. A background thread
+reads JSON commands off stdin into a mutex-protected queue. The main `_process`
+loop drains the queue one item per tick, running each test as a coroutine so
+`await physics_frame` works correctly.
+
+Each test runs in a fresh script instance. After the test, the instance is freed
+and a per-test container node (used by `add_child_autofree`) is queue_free'd.
+
+## Crash recovery
+
+If a worker's stdout closes mid-test (Godot crashed or the script errored fatally),
+the pool:
+1. Attributes the crash to the in-flight test → `TestError`
+2. Respawns the worker
+3. Continues draining the remaining queue
+
+A crash in one test never stops other tests from running.
+
+## Stderr correlation
+
+On Unix, Godot's stderr is attached to a PTY so the worker sees a TTY and
+flushes `SCRIPT ERROR:` lines immediately. The pool buffers these and
+correlates them with the in-flight test — a test that passes all assertions
+but logged a runtime error is escalated to `TestError` rather than silently
+passing. The same stderr buffering is also used before `test_start`, so parse
+or load failures now include the original Godot `SCRIPT ERROR:` lines in the
+reported `TestError` instead of only a generic instantiation failure.
+
+## Class cache
+
+GDScript's `class_name` declarations are resolved via a project-level cache at
+`.godot/global_script_class_cache.cfg`. gdtest checks for this file (and for
+missing `.uid` siblings on new test files) on startup and runs
+`godot --headless --import` once if it's stale. Pass `--no-auto-import` in CI
+where the cache is pre-built in a prior step.
+
+## Isolation modes
+
+**`file`** (default) — one worker per file. Fast; the Godot process stays alive
+across all tests in the file.
+
+**`test`** — the worker is shut down after each test result and a new process is
+spawned for the next. Adds ~200 ms per test but guarantees a clean autoload
+environment. Required when tests mutate global singletons.

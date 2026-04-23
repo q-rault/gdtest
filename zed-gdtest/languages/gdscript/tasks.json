@@ -1,0 +1,19 @@
+[
+  {
+    "label": "gdtest: run all",
+    "command": "gdtest",
+    "args": [".", "--project-path", "$ZED_WORKTREE_ROOT"]
+  },
+  {
+    "label": "gdtest: run file ($ZED_RELATIVE_FILE)",
+    "command": "gdtest",
+    "args": ["$ZED_RELATIVE_FILE", "--project-path", "$ZED_WORKTREE_ROOT"],
+    "tags": ["gdscript-test-file"]
+  },
+  {
+    "label": "gdtest: run test at cursor ($ZED_SYMBOL)",
+    "command": "gdtest",
+    "args": ["$ZED_RELATIVE_FILE::$ZED_SYMBOL", "--project-path", "$ZED_WORKTREE_ROOT"],
+    "tags": ["gdscript-test"]
+  }
+]

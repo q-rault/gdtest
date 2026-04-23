@@ -1,0 +1,234 @@
+---
+title: Assertions Reference
+description: Complete API reference for all gdtest assertion functions.
+---
+
+All functions below are available as unqualified calls when your test class `extends GdTest`, or as `Gdt.*` static calls when it must extend an engine type.
+
+For a walkthrough with context, see [Writing Your First Test](/docs/guide-first-test).
+
+---
+
+## Equality
+
+```gdscript
+assert_eq(actual, expected, msg = "")
+assert_ne(actual, not_expected, msg = "")
+assert_lt(actual, bound, msg = "")
+assert_lte(actual, bound, msg = "")
+assert_gt(actual, bound, msg = "")
+assert_gte(actual, bound, msg = "")
+```
+
+```gdscript
+assert_eq(calc_damage(10, 3), 7)
+assert_gt(player.hp, 0)
+assert_lte(elapsed_ms, 100)
+```
+
+---
+
+## Float & approximate
+
+```gdscript
+assert_almost_eq(actual, expected, tolerance = 1e-6, msg = "")
+assert_approx(actual, expected, tolerance = 1e-6, msg = "")   # alias
+```
+
+```gdscript
+assert_almost_eq(lerp(0.0, 1.0, 0.5), 0.5)
+assert_approx(sin(PI), 0.0, 1e-5)
+```
+
+---
+
+## Boolean & null
+
+```gdscript
+assert_true(cond, msg = "")
+assert_false(cond, msg = "")
+assert_null(value, msg = "")
+assert_not_null(value, msg = "")
+```
+
+```gdscript
+assert_true(player.is_alive())
+assert_null(inventory.find_item("nonexistent"))
+```
+
+---
+
+## Collections
+
+```gdscript
+assert_has(collection, value, msg = "")
+assert_not_has(collection, value, msg = "")
+assert_is(obj, SomeClass, msg = "")
+assert_between(value, low, high, msg = "")
+```
+
+`assert_has` works on `Array`, `Dictionary` (checks keys), and `String` (substring check).
+
+```gdscript
+assert_has(inventory.items, "sword")
+assert_is(spawned_node, Enemy)
+assert_between(player.level, 1, 18)
+```
+
+---
+
+## Strings
+
+```gdscript
+assert_string_contains(haystack, needle, msg = "")
+assert_string_starts_with(s, prefix, msg = "")
+assert_string_ends_with(s, suffix, msg = "")
+```
+
+```gdscript
+assert_string_contains(error_message, "out of bounds")
+assert_string_starts_with(save_path, "user://")
+```
+
+---
+
+## Spatial types
+
+All use distance-based comparison:
+
+```gdscript
+assert_vec2_approx(a, b, tolerance = 1e-5, msg = "")
+assert_vec3_approx(a, b, tolerance = 1e-5, msg = "")
+assert_vec4_approx(a, b, tolerance = 1e-5, msg = "")
+assert_color_approx(a, b, tolerance = 1e-5, msg = "")   # max channel diff
+assert_rect2_approx(a, b, tolerance = 1e-5, msg = "")   # pos + size
+```
+
+```gdscript
+assert_vec2_approx(projectile.velocity.normalized(), Vector2.RIGHT)
+assert_color_approx(tween_result, Color.RED, 0.01)
+```
+
+---
+
+## Signals
+
+All signal assertions must be `await`ed:
+
+```gdscript
+await assert_signal(node, "signal_name", timeout_ms = 1000)
+await assert_no_signal(node, "signal_name", timeout_ms = 200)
+await assert_signal_count(node, "signal_name", expected_count, timeout_ms = 1000)
+await assert_signal_with_args(node, "signal_name", [arg1, arg2], timeout_ms = 1000)
+```
+
+```gdscript
+func test_player_emits_died() -> void:
+    player.hp = 0
+    player.take_damage(1)
+    await assert_signal(player, "died")
+```
+
+`assert_no_signal` passes if the signal is *not* emitted within the timeout.
+
+---
+
+## Snapshots
+
+```gdscript
+assert_snapshot(actual, name = "")
+```
+
+Serializes `actual` with `var_to_str` and compares against a stored `.gdsnap` file. First run creates the file. See [Snapshot Testing](/docs/snapshots).
+
+---
+
+## Control flow
+
+```gdscript
+fail(msg = "")     # unconditional failure
+pending(msg = "")  # marks test pending, continues execution
+skip(msg = "")     # marks test skipped, continues execution
+```
+
+---
+
+## Async helpers
+
+```gdscript
+await wait_physics_frames(n = 1)
+await wait_physics_seconds(seconds)
+await wait_process_frame()
+```
+
+---
+
+## Scene helpers
+
+```gdscript
+add_child_autofree(node) -> Node      # adds node as child; freed after test
+instantiate_scene(packed) -> Node     # instantiates and adds as child; freed after test
+scene_runner(packed) -> SceneRunner   # see SceneRunner API Reference
+```
+
+---
+
+## Lifecycle hooks
+
+```gdscript
+func before_all() -> void    # once before any test in the file
+func after_all() -> void     # once after all tests in the file
+func before_each() -> void   # before every test_*
+func after_each() -> void    # after every test_* (runs even on failure)
+```
+
+---
+
+## Inline skip & focus
+
+| Prefix | Behaviour |
+|---|---|
+| `xtest_` | Always skipped |
+| `ftest_` | Only this function runs in the file |
+
+```gdscript
+func xtest_not_implemented_yet() -> void: pass
+func ftest_the_one_i_am_debugging() -> void: ...
+```
+
+---
+
+## Parameterized tests
+
+Define a `get_test_<name>_cases()` function that returns an `Array` of `[label, [args...]]`:
+
+```gdscript
+func get_test_damage_cases() -> Array:
+    return [
+        ["zero defense", [10, 0, 10]],
+        ["partial defense", [10, 3, 7]],
+        ["full block", [5, 10, 0]],
+    ]
+
+func test_damage(attack: int, defense: int, expected: int) -> void:
+    assert_eq(Battle.calc_damage(attack, defense), expected)
+```
+
+Each case emits a separate result: `test_damage[zero defense]`, `test_damage[partial defense]`, etc.
+
+---
+
+## Describe blocks
+
+Inner classes named `describe_*` are treated as sub-suites. Each must declare `extends GdTest`:
+
+```gdscript
+class describe_Battle extends GdTest:
+    func test_basic_hit() -> void:
+        assert_eq(Battle.calc_damage(10, 3), 7)
+
+    func test_crit() -> void:
+        assert_eq(Battle.calc_damage(10, 3, true), 14)
+```
+
+Reported as `describe_Battle/test_basic_hit`, `describe_Battle/test_crit`.

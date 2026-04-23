@@ -1,0 +1,16 @@
+name = "GDScript"
+grammar = "gdscript"
+path_suffixes = ["gd"]
+line_comments = ["# "]
+
+[[brackets]]
+start = "{"
+end = "}"
+
+[[brackets]]
+start = "["
+end = "]"
+
+[[brackets]]
+start = "("
+end = ")"

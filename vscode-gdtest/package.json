@@ -1,0 +1,64 @@
+{
+  "name": "vscode-gdtest",
+  "displayName": "gdtest",
+  "description": "Run and view gdtest test results in VS Code",
+  "version": "0.1.0",
+  "publisher": "gdtest",
+  "repository": "https://github.com/gdtest/gdtest",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": ["Testing"],
+  "activationEvents": [
+    "workspaceContains:**/test_*.gd",
+    "onCommand:gdtest.runAll",
+    "onCommand:gdtest.runFile"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "gdtest.runAll",
+        "title": "gdtest: Run All Tests"
+      },
+      {
+        "command": "gdtest.runFile",
+        "title": "gdtest: Run Tests in Current File"
+      }
+    ],
+    "configuration": {
+      "title": "gdtest",
+      "properties": {
+        "gdtest.executablePath": {
+          "type": "string",
+          "default": "gdtest",
+          "description": "Path to the gdtest executable. Defaults to 'gdtest' (must be on PATH)."
+        },
+        "gdtest.testDirectory": {
+          "type": "string",
+          "default": "test/",
+          "description": "Relative path to the test directory."
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "command": "gdtest.runFile",
+        "key": "ctrl+shift+t",
+        "mac": "cmd+shift+t",
+        "when": "editorLangId == gdscript"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.75.0",
+    "@types/node": "^18.0.0",
+    "typescript": "^5.0.0",
+    "@vscode/vsce": "^2.0.0"
+  }
+}

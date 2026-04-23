@@ -1,0 +1,94 @@
+---
+title: Testing Scenes & Input
+description: Drive scenes with simulated input in headless tests using SceneRunner.
+---
+
+Some behaviour only happens when frames advance and input fires: a player walks into a pickup zone, a button is pressed, a timer expires. You cannot test these with plain assertions — the scene needs to run.
+
+`scene_runner()` gives you a headless harness: instantiate a scene, pump frames, fire input events, and then assert on the result.
+
+## A complete example
+
+A player walks into a health potion and the scene emits a `collected` signal. The test simulates movement, waits for frames, and checks the player's HP:
+
+```gdscript
+# test/test_potion_pickup.gd
+extends GdTest
+
+func test_potion_heals_player() -> void:
+    var runner = scene_runner(load("res://levels/test_room.tscn"))
+    var player = runner.scene.get_node("Player")
+    player.hp = 50
+
+    runner.simulate_action_pressed("move_right")
+    await runner.simulate_frames(20)
+    runner.simulate_action_released("move_right")
+
+    assert_eq(player.hp, 80)
+```
+
+`runner.scene` is the instantiated root node. The runner adds it to the scene tree and frees it at the end of the test — no manual cleanup needed.
+
+## Advancing time
+
+Use `simulate_frames` to advance process frames by count, or `simulate_seconds` to advance by game-time duration:
+
+```gdscript
+func test_respawn_timer() -> void:
+    var runner = scene_runner(load("res://player/player.tscn"))
+    var player = runner.scene
+
+    player.die()
+    await runner.simulate_seconds(3.0)
+
+    assert_true(player.is_alive())
+```
+
+```gdscript
+await runner.simulate_frames(10)       # advance 10 process frames
+await runner.simulate_seconds(1.5)     # advance 1.5 seconds of game time
+```
+
+Both must be `await`ed.
+
+## Simulating actions
+
+Use `simulate_action_pressed` and `simulate_action_released` to fire InputMap actions:
+
+```gdscript
+func test_jump_increases_y_velocity() -> void:
+    var runner = scene_runner(load("res://player/player.tscn"))
+    var player = runner.scene
+
+    runner.simulate_action_pressed("jump")
+    await runner.simulate_frames(3)
+    runner.simulate_action_released("jump")
+
+    assert_lt(player.velocity.y, 0.0)
+```
+
+Held actions are automatically released when the runner is freed — input state never leaks between tests.
+
+## Simulating keyboard input
+
+```gdscript
+runner.simulate_key_pressed(KEY_SPACE)
+runner.simulate_key_pressed(KEY_Z, KEY_MASK_CTRL)   # Ctrl+Z
+runner.simulate_key_released(KEY_SPACE)
+```
+
+Available modifier flags: `KEY_MASK_CTRL`, `KEY_MASK_SHIFT`, `KEY_MASK_ALT`.
+
+## Simulating mouse input
+
+```gdscript
+runner.simulate_mouse_move(Vector2(100, 200))
+runner.simulate_mouse_button_pressed(MOUSE_BUTTON_LEFT, Vector2(100, 200))
+runner.simulate_mouse_button_released(MOUSE_BUTTON_LEFT, Vector2(100, 200))
+```
+
+> **Headless limitation:** Action and keyboard events work in `--headless` mode. Mouse position events are routed by screen coordinates — a `Button` hit-tested by mouse position requires a virtual display. For UI tests, prefer `Input.action_press` / `action_release` over raw mouse events.
+
+---
+
+For the complete SceneRunner API — all method signatures and parameters — see [SceneRunner API Reference](/docs/ref-scene-runner-api).

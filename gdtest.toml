@@ -1,0 +1,12 @@
+harness = "harness/gdtest_worker.gd"
+
+# Only scan test files; exclude fixtures/, support/, and docs dungeon helpers.
+patterns = ["test/test_*.gd", "test/docs/**/test_*.gd"]
+
+# harness-meta: tests that deliberately fail to exercise harness behaviour.
+# isolation-specific: tests that require -j 1 to be meaningful.
+exclude_tags = ["harness-meta", "isolation-specific"]
+
+# Path to your Godot 4 executable. Read by the Zed extension to build task commands.
+# Defaults to "godot4" if omitted.
+# godot_exe = "godot4"
