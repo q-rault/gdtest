@@ -1,13 +1,13 @@
 # Benchmarks
 
-`bench.sh` times gdtest, GUT, and gdUnit4 against the same test suite and
-prints a comparison table with gdtest as the reference point.
+`bench.sh` times gdtest, GUT, and gdUnit4 against the same test suite and prints a comparison table with gdtest as the reference point.
 
 ## Prerequisites
 
 - `GODOT_EXE` set in `.env` at the repo root or in your environment
 - `cargo build --release` done (or `just build`)
 - `GODOT_PROJECT_PATH` pointing to a Godot project with GUT and gdUnit4 installed
+- Optional: `GDTEST_BIN` if you want to benchmark a binary outside `target/release/gdtest`
 
 ## Usage
 
@@ -51,24 +51,24 @@ GODOT_PROJECT_PATH=~/my-game MANIFEST=~/my-game/bench.manifest just bench-projec
 | `--manifest FILE` | none | One `path/to/test.gd [file\|test]` line per file |
 | `--no-warmup` | off | Skip the initial `godot --import` pass |
 
-`BENCH_RUNS` env var sets the default run count (useful in CI: `BENCH_RUNS=1 just bench`).
+`BENCH_RUNS` sets the default run count. This is useful in CI: `BENCH_RUNS=1 just bench`.
 
 ## Output
 
-```
+```text
 category      tool        tests     j    median      min      max    vs gdtest
 -----------------------------------------------------------------------------
 all           gdtest         61     4   13.014s  12.992s  13.143s          ref
-all           gut            58    --   27.792s  27.733s  27.794s        2.14×
-all           gdunit4        61    --   24.411s  24.408s  24.458s        1.88×
-all           gut-rt         61    --   13.025s  12.991s  13.236s        1.00×
-all           gdunit4-rt     61    --   13.018s  12.999s  13.128s        1.00×
+all           gut            58    --   27.792s  27.733s  27.794s        2.14x
+all           gdunit4        61    --   24.411s  24.408s  24.458s        1.88x
+all           gut-rt         61    --   13.025s  12.991s  13.236s        1.00x
+all           gdunit4-rt     61    --   13.018s  12.999s  13.128s        1.00x
 
-SUMMARY: gdtest vs gut — gdtest: 61 tests / gut: 58 tests — counts differ, comparison excluded
-SUMMARY: gdtest vs gdunit4 — both ran 61 tests — gdtest is 1.88x faster (13.0s vs 24.4s)
+SUMMARY: gdtest vs gut - gdtest: 61 tests / gut: 58 tests - counts differ, comparison excluded
+SUMMARY: gdtest vs gdunit4 - both ran 61 tests - gdtest is 1.88x faster (13.0s vs 24.4s)
 ```
 
-`gdtest-speedup` is `tool_time / gdtest_time` — values above 1× mean gdtest is faster.
+`vs gdtest` is `tool_time / gdtest_time`. Values above `1.00x` mean gdtest is faster.
 
 The `SUMMARY:` lines are grep-friendly for CI log parsing.
 
@@ -82,8 +82,7 @@ The `SUMMARY:` lines are grep-friendly for CI log parsing.
 | `isolation` | `test_economie_or.gd`, `test_respawn_timer_de_mort.gd` | 34 | test |
 | `all` | all of the above | 61 | mixed |
 
-Physics-heavy categories are bounded by real-time simulation; speedup there comes from
-parallelism (`-j N`), not startup amortisation.
+Physics-heavy categories are bounded by real-time simulation; speedup there comes from parallelism (`-j N`), not startup amortization.
 
 ## Saved results
 
@@ -96,30 +95,28 @@ JSON runs land in `benchmarks/results/` (`.gitignore`'d; only `.gitkeep` is trac
 ```sh
 # Single file
 just transpile --target gut     test/cases/test_player.gd > out.gd   # GdTest -> GUT
-just transpile --source gut     test_player_gut.gd > out.gd           # GUT -> GdTest
-just transpile --source gdunit4 test_player_gdunit4.gd > out.gd       # gdUnit4 -> GdTest
+just transpile --source gut     test_player_gut.gd > out.gd          # GUT -> GdTest
+just transpile --source gdunit4 test_player_gdunit4.gd > out.gd      # gdUnit4 -> GdTest
 
-# Directory — rewrites files in place (use git restore to revert)
+# Directory - rewrites files in place (use git to revert)
 just transpile --source gut     test/cases/
 just transpile --source gdunit4 --check test/cases/   # dry-run, exit 1 if diff
 
-# Directory — write converted files to an output directory
+# Directory - write converted files to an output directory
 just transpile --target gut --output-dir /tmp/gut-tests test/cases/
 ```
 
-The `--check` flag is CI-friendly: it prints a unified diff and exits 1 if any
-file would change, without writing anything.
+The `--check` flag prints a unified diff and exits `1` if any file would change, without writing anything.
 
 ## Evaluation kit
 
-Use the templates in `benchmarks/templates/` when evaluating a real project for
-migration fit:
+Use the templates in `benchmarks/templates/` when evaluating a real project for migration fit:
 
-- `game-scorecard.md` - 7-axis scorecard with scoring rubric and verdict bands
-- `metric-collection-checklist.md` - commands and evidence to collect per axis
-- `api-mapping-template.md` - per-project source API to gdtest mapping table
-- `gut-migration-notes.md` - per-file migration notes for representative GUT ports
-- `gdunit4-migration-notes.md` - per-file migration notes for representative gdUnit4 ports
+- `game-scorecard.md`: 7-axis scorecard with scoring rubric and verdict bands
+- `metric-collection-checklist.md`: commands and evidence to collect per axis
+- `api-mapping-template.md`: per-project source API to gdtest mapping table
+- `gut-migration-notes.md`: per-file migration notes for representative GUT ports
+- `gdunit4-migration-notes.md`: per-file migration notes for representative gdUnit4 ports
 
 Recommended flow:
 
@@ -129,8 +126,7 @@ Recommended flow:
 
 ## GUT project evaluation
 
-For a GUT-based game, use `benchmarks/eval_gut_game.sh` to generate the raw
-artifacts for axes A, B, E, and F in one pass.
+For a GUT-based game, use `benchmarks/eval_gut_game.sh` to generate the raw artifacts for axes A, B, E, and F in one pass.
 
 ```sh
 export GAME_DIR=/path/to/game
@@ -148,17 +144,13 @@ Outputs land in `benchmarks/results/<game>-gut-eval/` and include:
 - `gut_porting_candidates.md` for choosing representative files to port
 - `summary.env` and `README.md` with timings and exit codes
 
-Use `benchmarks/templates/gut-migration-notes.md` while porting the chosen
-files so the scorecard can point at concrete rewrite examples.
+Use `benchmarks/templates/gut-migration-notes.md` while porting the chosen files so the scorecard can point at concrete rewrite examples.
 
 ## gdUnit4 project evaluation
 
-For a gdUnit4-based game, use `benchmarks/eval_gdunit4_game.sh` to generate the
-raw artifacts for suite discovery, API inventory, baseline runtime, gdtest
-setup, and gdtest JUnit output in one pass.
+For a gdUnit4-based game, use `benchmarks/eval_gdunit4_game.sh` to generate the raw artifacts for suite discovery, API inventory, baseline runtime, gdtest setup, and gdtest JUnit output in one pass.
 
-The harness is generic. Actual runs depend on those repositories being cloned
-locally as Godot projects with their gdUnit4 suites available on disk.
+The harness is generic. Actual runs depend on those repositories being cloned locally as Godot projects with their gdUnit4 suites available on disk.
 
 ```sh
 export GAME_DIR=/path/to/game
@@ -177,5 +169,4 @@ Outputs land in `benchmarks/results/<game>-gdunit4-eval/` and include:
 - `gdunit4_porting_candidates.md` for portable vs excluded files and the 20-30 test sample
 - `summary.env` and `README.md` with timings, exit codes, and the gdUnit4/gdtest ratio
 
-Use `benchmarks/templates/gdunit4-migration-notes.md` while porting the chosen
-files so the scorecard can point at concrete rewrite examples.
+Use `benchmarks/templates/gdunit4-migration-notes.md` while porting the chosen files so the scorecard can point at concrete rewrite examples.

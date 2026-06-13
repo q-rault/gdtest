@@ -8,6 +8,7 @@ repository.workspace = true
 homepage.workspace = true
 authors.workspace = true
 description = "Tree-sitter-based GDScript test discovery for gdtest"
+readme = "README.md"
 keywords = ["godot", "gdscript", "testing", "tree-sitter"]
 categories = ["development-tools::testing", "parser-implementations"]
 
