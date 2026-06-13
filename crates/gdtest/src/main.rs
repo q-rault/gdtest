@@ -338,7 +338,8 @@ fn main() -> anyhow::Result<()> {
         // Skip when --list: discovery doesn't touch Godot, no need to import.
         ensure_class_cache(&cfg, &targets)?;
     }
-    let jobs = cli.jobs.unwrap_or_else(num_cpus::get).max(1);
+    let num_cpus = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+    let jobs = cli.jobs.unwrap_or(num_cpus).max(1);
     let reporter = cli.reporter.unwrap_or(reporter::ReporterKind::Pretty);
     let isolation = cli.isolation.unwrap_or(pool::IsolationMode::File);
     let timeout = cli.timeout.unwrap_or(5000);
