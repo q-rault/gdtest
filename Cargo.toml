@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/gdtest-cli",
+    "crates/gdtest",
     "crates/gdtest-analysis",
 ]
 
