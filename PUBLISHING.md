@@ -39,7 +39,7 @@ The workflow then:
 2. Creates a GitHub release with all archives attached + auto-generated
    notes.
 3. Publishes the two crates to crates.io in dependency order:
-   `gdtest-discovery` → `gdtest`.
+   `gdtest-analysis` → `gdtest`.
 
 After the workflow finishes:
 

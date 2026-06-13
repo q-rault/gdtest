@@ -1,7 +1,7 @@
 //! Worker pool + MPSC test dispatch (M2/M3: internal/70/71/73/77).
 //!
 //! Work item granularity: a `(script, func)` pair. Tree-sitter discovery
-//! (gdtest-discovery) produces the full list; the pool dispatches each to
+//! (gdtest-analysis) produces the full list; the pool dispatches each to
 //! whichever worker grabs it off the shared queue first — load-balanced
 //! for free, no shard pre-computation.
 //!

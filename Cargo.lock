@@ -172,7 +172,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
- "gdtest-discovery",
+ "gdtest-analysis",
  "libc",
  "notify",
  "num_cpus",
@@ -186,7 +186,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "gdtest-discovery"
+name = "gdtest-analysis"
 version = "0.1.0"
 dependencies = [
  "anyhow",

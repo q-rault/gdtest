@@ -424,7 +424,7 @@ fn run_watch(
         }
     }
     let patterns = config::load_patterns(&cfg.project_path);
-    let resolved_files = gdtest_discovery::resolve(&file_targets, &project_abs, &patterns)?;
+    let resolved_files = gdtest_analysis::resolve(&file_targets, &project_abs, &patterns)?;
     watch::run(watch::WatchOptions {
         project_path: project_abs,
         jobs,
@@ -505,11 +505,11 @@ fn targets_have_missing_uid(targets: &[String], project_path: &std::path::Path) 
         file_targets.push(path_part.to_string());
     }
     let patterns = config::load_patterns(&project_path.to_string_lossy());
-    let Ok(resolved) = gdtest_discovery::resolve(&file_targets, &project_abs, &patterns) else {
+    let Ok(resolved) = gdtest_analysis::resolve(&file_targets, &project_abs, &patterns) else {
         return false;
     };
     resolved.iter().any(|res| {
-        let Ok(abs) = gdtest_discovery::res_to_abs(res, &project_abs) else {
+        let Ok(abs) = gdtest_analysis::res_to_abs(res, &project_abs) else {
             return false;
         };
         let mut uid = abs.into_os_string();
@@ -577,7 +577,7 @@ async fn run_pool(
 
     // Resolve file targets to res:// paths, then tree-sitter-discover each.
     let patterns = config::load_patterns(&cfg.project_path);
-    let mut files = gdtest_discovery::resolve(&file_targets, &project_abs, &patterns)?;
+    let mut files = gdtest_analysis::resolve(&file_targets, &project_abs, &patterns)?;
 
     // Apply test impact analysis: keep only files affected by changed sources.
     if changed_only || changed_since.is_some() {
@@ -588,8 +588,8 @@ async fn run_pool(
             return Ok(());
         }
         let changed_set: std::collections::HashSet<String> = changed.into_iter().collect();
-        let (_, reverse) = gdtest_discovery::deps::build_dep_graph(&project_abs);
-        let affected = gdtest_discovery::deps::affected_files(&changed_set, &reverse);
+        let (_, reverse) = gdtest_analysis::deps::build_dep_graph(&project_abs);
+        let affected = gdtest_analysis::deps::affected_files(&changed_set, &reverse);
         let total = files.len();
         files.retain(|f| changed_set.contains(f) || affected.contains(f));
         eprintln!(
@@ -615,8 +615,8 @@ async fn run_pool(
 
     let mut items: Vec<pool::TestItem> = explicit_tests;
     for file in &files {
-        let abs = gdtest_discovery::res_to_abs(file, &project_abs)?;
-        let mut entries = gdtest_discovery::list_test_entries_in(&abs).unwrap_or_default();
+        let abs = gdtest_analysis::res_to_abs(file, &project_abs)?;
+        let mut entries = gdtest_analysis::list_test_entries_in(&abs).unwrap_or_default();
         if entries.is_empty() {
             eprintln!("gdtest: no test functions found in {file} (parse error or empty file)");
             continue;
@@ -643,12 +643,12 @@ async fn run_pool(
                 display_script: file.clone(),
             };
             match e.kind {
-                gdtest_discovery::TestKind::Bench => {
+                gdtest_analysis::TestKind::Bench => {
                     if bench_mode {
                         items.push(item);
                     }
                 }
-                gdtest_discovery::TestKind::Normal => {
+                gdtest_analysis::TestKind::Normal => {
                     if !bench_mode {
                         items.push(item);
                     }
@@ -929,7 +929,7 @@ fn instrument_for_coverage(
         let res_path = format!("res://{rel_str}");
         let source = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
         let (instrumented, lines) =
-            gdtest_discovery::coverage::instrument_source(&source, &res_path);
+            gdtest_analysis::coverage::instrument_source(&source, &res_path);
 
         if lines.is_empty() {
             continue; // no function bodies — nothing to track
@@ -971,8 +971,8 @@ fn do_rewrites(files: &[String], project_abs: &Path) -> anyhow::Result<HashMap<S
     }
     let mut map = HashMap::new();
     for res_path in files {
-        let abs = gdtest_discovery::res_to_abs(res_path, project_abs)?;
-        let output = gdtest_discovery::rewrite_file(&abs, res_path)?;
+        let abs = gdtest_analysis::res_to_abs(res_path, project_abs)?;
+        let output = gdtest_analysis::rewrite_file(&abs, res_path)?;
         if output.changed {
             let rel = res_path.strip_prefix("res://").unwrap_or(res_path.as_str());
             let dest = rewrite_dir.join(rel);
@@ -1007,7 +1007,7 @@ fn get_changed_gd_files(project_abs: &Path, since_ref: Option<&str>) -> Vec<Stri
     if let Ok(out) = cmd.output() {
         if let Ok(text) = std::str::from_utf8(&out.stdout) {
             for line in text.lines().filter(|l| l.ends_with(".gd")) {
-                if let Ok(rp) = gdtest_discovery::to_res_path(&project_abs.join(line), project_abs)
+                if let Ok(rp) = gdtest_analysis::to_res_path(&project_abs.join(line), project_abs)
                 {
                     paths.push(rp);
                 }
@@ -1027,7 +1027,7 @@ fn get_changed_gd_files(project_abs: &Path, since_ref: Option<&str>) -> Vec<Stri
             if let Ok(text2) = std::str::from_utf8(&out2.stdout) {
                 for line in text2.lines().filter(|l| l.ends_with(".gd")) {
                     if let Ok(rp) =
-                        gdtest_discovery::to_res_path(&project_abs.join(line), project_abs)
+                        gdtest_analysis::to_res_path(&project_abs.join(line), project_abs)
                     {
                         paths.push(rp);
                     }
@@ -1067,12 +1067,12 @@ async fn run_mutate(
         }
     }
     let patterns = config::load_patterns(&cfg.project_path);
-    let files = gdtest_discovery::resolve(&file_targets, &project_abs, &patterns)?;
+    let files = gdtest_analysis::resolve(&file_targets, &project_abs, &patterns)?;
     for file in &files {
-        let abs = gdtest_discovery::res_to_abs(file, &project_abs)?;
-        let entries = gdtest_discovery::list_test_entries_in(&abs).unwrap_or_default();
+        let abs = gdtest_analysis::res_to_abs(file, &project_abs)?;
+        let entries = gdtest_analysis::list_test_entries_in(&abs).unwrap_or_default();
         for e in entries {
-            if e.kind == gdtest_discovery::TestKind::Normal {
+            if e.kind == gdtest_analysis::TestKind::Normal {
                 items.push(pool::TestItem {
                     script: file.clone(),
                     func: e.name,
@@ -1138,5 +1138,5 @@ fn normalize_res(path: &str, project_abs: &std::path::Path) -> anyhow::Result<St
     } else {
         project_abs.join(p)
     };
-    gdtest_discovery::to_res_path(&abs, project_abs)
+    gdtest_analysis::to_res_path(&abs, project_abs)
 }

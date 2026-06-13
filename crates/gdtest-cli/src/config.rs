@@ -207,13 +207,13 @@ pub fn load_plugins(project_path: &str) -> Vec<String> {
 /// Never returns an empty Vec — callers can always pass the result to `resolve`.
 pub fn load_patterns(project_path: &str) -> Vec<String> {
     let Ok(Some(cfg)) = load(Path::new(project_path)) else {
-        return gdtest_discovery::DEFAULT_PATTERNS
+        return gdtest_analysis::DEFAULT_PATTERNS
             .iter()
             .map(|s| s.to_string())
             .collect();
     };
     if cfg.patterns.is_empty() {
-        gdtest_discovery::DEFAULT_PATTERNS
+        gdtest_analysis::DEFAULT_PATTERNS
             .iter()
             .map(|s| s.to_string())
             .collect()

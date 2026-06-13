@@ -131,7 +131,7 @@ fn run_framework(
 
     let mut report_files = Vec::new();
     for file in &files {
-        let res_path = gdtest_discovery::to_res_path(file, &project_abs)?;
+        let res_path = gdtest_analysis::to_res_path(file, &project_abs)?;
         let rel = file
             .strip_prefix(&project_abs)
             .with_context(|| format!("{} is outside {}", file.display(), project_abs.display()))?;
@@ -206,14 +206,14 @@ fn migrate_file(
 ) -> Result<MigrationOutput> {
     match framework {
         MigrationFramework::Gut => {
-            let result = gdtest_discovery::migrate_gut_file(path, res_path)?;
+            let result = gdtest_analysis::migrate_gut_file(path, res_path)?;
             Ok(MigrationOutput {
                 source: result.source,
                 status: match result.status {
-                    gdtest_discovery::GutMigrationStatus::CandidateForExecution => {
+                    gdtest_analysis::GutMigrationStatus::CandidateForExecution => {
                         MigrationStatus::CandidateForExecution
                     }
-                    gdtest_discovery::GutMigrationStatus::RewriteIncomplete => {
+                    gdtest_analysis::GutMigrationStatus::RewriteIncomplete => {
                         MigrationStatus::RewriteIncomplete
                     }
                 },
@@ -247,14 +247,14 @@ fn migrate_file(
             })
         }
         MigrationFramework::Gdunit4 => {
-            let result = gdtest_discovery::migrate_gdunit4_file(path, res_path)?;
+            let result = gdtest_analysis::migrate_gdunit4_file(path, res_path)?;
             Ok(MigrationOutput {
                 source: result.source,
                 status: match result.status {
-                    gdtest_discovery::GdUnit4MigrationStatus::CandidateForExecution => {
+                    gdtest_analysis::GdUnit4MigrationStatus::CandidateForExecution => {
                         MigrationStatus::CandidateForExecution
                     }
-                    gdtest_discovery::GdUnit4MigrationStatus::RewriteIncomplete => {
+                    gdtest_analysis::GdUnit4MigrationStatus::RewriteIncomplete => {
                         MigrationStatus::RewriteIncomplete
                     }
                 },
@@ -433,8 +433,8 @@ fn discover_framework_files(
 
 fn is_framework_test_file(path: &Path, framework: MigrationFramework) -> Result<bool> {
     match framework {
-        MigrationFramework::Gut => gdtest_discovery::is_gut_test_file(path),
-        MigrationFramework::Gdunit4 => gdtest_discovery::is_gdunit4_test_file(path),
+        MigrationFramework::Gut => gdtest_analysis::is_gut_test_file(path),
+        MigrationFramework::Gdunit4 => gdtest_analysis::is_gdunit4_test_file(path),
     }
 }
 

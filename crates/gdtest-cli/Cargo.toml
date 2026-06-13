@@ -27,7 +27,7 @@ path = "src/main.rs"
 libc = "0.2"
 
 [dependencies]
-gdtest-discovery.workspace = true
+gdtest-analysis.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "process", "io-util", "sync", "time", "signal"] }

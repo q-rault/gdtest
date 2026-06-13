@@ -1524,7 +1524,7 @@ static func assert_no_new_orphans(msg: String = "") -> bool:
 	return h.assert_no_new_orphans(msg)
 
 # ── Assert rewriting (internal) ───────────────────────────────────────────────
-# Called by the assert rewriter in gdtest-discovery. Not for direct use.
+# Called by the assert rewriter in gdtest-analysis. Not for direct use.
 
 static func _rewrite_eq(lhs: Variant, rhs: Variant, expr: String, file: String, line: int) -> void:
 	if lhs == rhs:

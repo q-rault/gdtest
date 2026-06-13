@@ -142,7 +142,7 @@ fn narrow_targets(
             Ok(a) => a,
             Err(_) => return None, // path no longer exists (e.g. deleted) — full rerun
         };
-        let res = match gdtest_discovery::to_res_path(&abs, &project_abs) {
+        let res = match gdtest_analysis::to_res_path(&abs, &project_abs) {
             Ok(r) => r,
             Err(_) => return None, // outside the project — full rerun
         };
@@ -176,8 +176,8 @@ async fn run_iteration(opts: &WatchOptions, changed: &[PathBuf]) -> Result<()> {
     // Re-discover so newly-added tests appear and removed ones disappear.
     let mut items: Vec<TestItem> = opts.explicit_tests.clone();
     for file in &opts.resolved_files {
-        let abs = gdtest_discovery::res_to_abs(file, &opts.project_path)?;
-        let mut entries = gdtest_discovery::list_test_entries_in(&abs).unwrap_or_default();
+        let abs = gdtest_analysis::res_to_abs(file, &opts.project_path)?;
+        let mut entries = gdtest_analysis::list_test_entries_in(&abs).unwrap_or_default();
         if !opts.include_tags.is_empty() || !opts.exclude_tags.is_empty() {
             entries.retain(|e| {
                 if !opts.include_tags.is_empty()
@@ -194,7 +194,7 @@ async fn run_iteration(opts: &WatchOptions, changed: &[PathBuf]) -> Result<()> {
             });
         }
         for e in entries {
-            if e.kind == gdtest_discovery::TestKind::Normal {
+            if e.kind == gdtest_analysis::TestKind::Normal {
                 items.push(TestItem::new(file.clone(), e.name));
             }
         }

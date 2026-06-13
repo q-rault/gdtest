@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
     "crates/gdtest-cli",
-    "crates/gdtest-discovery",
+    "crates/gdtest-analysis",
 ]
 
 [workspace.package]
@@ -30,7 +30,7 @@ anyhow = "1"
 thiserror = "2"
 toml = "0.8"
 
-gdtest-discovery = { path = "crates/gdtest-discovery", version = "0.1.0" }
+gdtest-analysis = { path = "crates/gdtest-analysis", version = "0.1.0" }
 
 [profile.release]
 lto = "thin"

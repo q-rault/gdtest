@@ -45,14 +45,14 @@ pub async fn run(
         } else {
             project_abs.join(p)
         };
-        gdtest_discovery::to_res_path(&abs, &project_abs)?
+        gdtest_analysis::to_res_path(&abs, &project_abs)?
     };
-    let abs_path = gdtest_discovery::res_to_abs(&res_path, &project_abs)?;
+    let abs_path = gdtest_analysis::res_to_abs(&res_path, &project_abs)?;
 
     let source =
         std::fs::read(&abs_path).with_context(|| format!("reading {}", abs_path.display()))?;
 
-    let mutations = gdtest_discovery::mutate::find_mutations(&source);
+    let mutations = gdtest_analysis::mutate::find_mutations(&source);
     let total = mutations.len();
 
     if total == 0 {
