@@ -87,3 +87,26 @@ package-zed:
 
 # Package all publishable artifacts.
 package-all: package-editor package-vscode package-zed
+
+# Bump version across all manifests.
+# Usage: just bump 0.2.0
+bump NEW_VER:
+    #!/usr/bin/env python3
+    import re, pathlib, sys
+
+    def sub(path, pattern, repl):
+        p = pathlib.Path(path)
+        text, n = re.subn(pattern, repl, p.read_text(), count=1, flags=re.MULTILINE)
+        if n != 1:
+            print(f"ERROR: pattern not found in {path}", file=sys.stderr)
+            sys.exit(1)
+        p.write_text(text)
+        print(f"  {path}")
+
+    ver = "{{NEW_VER}}"
+    print(f"bumping to {ver}")
+    sub("Cargo.toml",                      r'^(version\s*=\s*)"[^"]+"',  f'\\g<1>"{ver}"')
+    sub("vscode-gdtest/package.json",      r'("version"\s*:\s*)"[^"]+"', f'\\g<1>"{ver}"')
+    sub("zed-gdtest/extension.toml",       r'^(version\s*=\s*)"[^"]+"',  f'\\g<1>"{ver}"')
+    sub("addons/gdtest_editor/plugin.cfg", r'^(version\s*=\s*)"[^"]+"',  f'\\g<1>"{ver}"')
+    print("done — commit and tag to release")

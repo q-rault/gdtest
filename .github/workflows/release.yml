@@ -9,8 +9,39 @@ permissions:
   contents: write
 
 jobs:
+  verify-versions:
+    name: verify versions in sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check all manifests agree
+        run: |
+          python3 - <<'EOF'
+          import re, json, sys, pathlib
+
+          root = re.search(r'(?m)^version\s*=\s*"([^"]+)"', pathlib.Path("Cargo.toml").read_text()).group(1)
+          errors = []
+
+          vscode = json.loads(pathlib.Path("vscode-gdtest/package.json").read_text())["version"]
+          if vscode != root: errors.append(f"vscode-gdtest/package.json: {vscode!r}")
+
+          zed = re.search(r'(?m)^version\s*=\s*"([^"]+)"', pathlib.Path("zed-gdtest/extension.toml").read_text()).group(1)
+          if zed != root: errors.append(f"zed-gdtest/extension.toml: {zed!r}")
+
+          plugin = re.search(r'(?m)^version\s*=\s*"([^"]+)"', pathlib.Path("addons/gdtest_editor/plugin.cfg").read_text()).group(1)
+          if plugin != root: errors.append(f"addons/gdtest_editor/plugin.cfg: {plugin!r}")
+
+          if errors:
+              print(f"Expected {root!r} everywhere (from Cargo.toml), but found:")
+              for e in errors: print(f"  {e}")
+              print("Run 'just bump X.Y.Z' to sync all manifests.")
+              sys.exit(1)
+          print(f"All manifests agree on {root!r}.")
+          EOF
+
   build:
     name: build (${{ matrix.target }})
+    needs: verify-versions
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -68,6 +99,7 @@ jobs:
 
   package-extensions:
     name: package extensions
+    needs: verify-versions
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
