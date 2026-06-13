@@ -10,7 +10,7 @@ members = [
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.85"
-license = "MIT"
+license = "MIT OR Apache-2.0"
 repository = "https://github.com/q-rault/gdtest"
 homepage = "https://github.com/q-rault/gdtest"
 authors = ["Quentin Rault"]
@@ -31,8 +31,8 @@ anyhow = "1"
 thiserror = "2"
 toml = "0.8"
 
-gdtest-proto = { path = "crates/gdtest-proto" }
-gdtest-discovery = { path = "crates/gdtest-discovery" }
+gdtest-proto = { path = "crates/gdtest-proto", version = "0.1.0" }
+gdtest-discovery = { path = "crates/gdtest-discovery", version = "0.1.0" }
 
 [profile.release]
 lto = "thin"
