@@ -4,11 +4,6 @@ on:
   push:
     tags:
       - 'v*.*.*'
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Tag to release (e.g. v0.1.0). Created if missing.'
-        required: true
 
 permissions:
   contents: write
@@ -41,7 +36,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF_NAME:-${{ github.event.inputs.tag }}}"
+          tag="${GITHUB_REF_NAME}"
           ver="${tag#v}"
           name="gdtest-${ver}-${{ matrix.target }}"
           mkdir -p dist/$name
@@ -126,7 +121,7 @@ jobs:
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name || github.event.inputs.tag }}
+          tag_name: ${{ github.ref_name }}
           files: out/*
           generate_release_notes: true
 
@@ -134,7 +129,6 @@ jobs:
     name: publish to crates.io
     needs: build
     runs-on: ubuntu-latest
-    if: ${{ !github.event.inputs.tag }}  # skip on manual workflow_dispatch
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust toolchain

@@ -47,13 +47,6 @@ After the workflow finishes:
 - Update the README's install section if the binary URL pattern
   changes.
 
-## Manual dry run (without publishing)
-
-The workflow accepts `workflow_dispatch` with a `tag` input — it
-builds and uploads to the release page but **skips** the crates.io
-publish (the `if: ${{ !github.event.inputs.tag }}` guard). Use this to
-test the binary build pipeline without burning a crates.io version.
-
 ## Rollback
 
 crates.io versions are immutable. To withdraw a broken release:
