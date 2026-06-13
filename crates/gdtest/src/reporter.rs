@@ -40,6 +40,15 @@ impl Reporter {
         }
     }
 
+    /// Like `new`, but the JSON reporter writes each event as a numbered file
+    /// under `dir/` instead of stdout. Non-JSON reporters are unaffected.
+    pub fn new_to_dir(kind: ReporterKind, dir: &std::path::Path) -> std::io::Result<Self> {
+        match kind {
+            ReporterKind::Json => Ok(Reporter::Json(JsonReporter::to_dir(dir)?)),
+            _ => Ok(Self::new(kind)),
+        }
+    }
+
     pub fn set_total(&mut self, n: u32) {
         if let Reporter::Pretty(r) = self {
             r.set_total(n);
@@ -415,12 +424,65 @@ fn tap_escape(s: &str) -> String {
 /// Streams one JSON object per line per pool event, ending with a `summary`
 /// record. Stable schema for downstream tooling: `kind` discriminator
 /// matches `PoolEvent` variant in snake_case.
-#[derive(Default)]
-pub struct JsonReporter {}
+pub struct JsonReporter {
+    sink: JsonSink,
+}
+
+enum JsonSink {
+    Stdout,
+    /// Each event is written to its own numbered file (`<dir>/NNNNNNNN.json`).
+    /// The file is created, written, and closed before Godot ever sees it in
+    /// the directory listing, so there are zero Windows file-sharing conflicts.
+    Dir { path: std::path::PathBuf, seq: u32 },
+}
+
+impl Default for JsonReporter {
+    fn default() -> Self {
+        Self { sink: JsonSink::Stdout }
+    }
+}
+
+impl JsonReporter {
+    pub fn to_dir(dir: &std::path::Path) -> std::io::Result<Self> {
+        if dir.exists() {
+            for entry in std::fs::read_dir(dir)? {
+                let p = entry?.path();
+                if p.extension().and_then(|e| e.to_str()) == Some("json") {
+                    let _ = std::fs::remove_file(p);
+                }
+            }
+        } else {
+            std::fs::create_dir_all(dir)?;
+        }
+        Ok(Self { sink: JsonSink::Dir { path: dir.to_owned(), seq: 0 } })
+    }
+
+    fn write_line(&mut self, line: &str) {
+        match &mut self.sink {
+            JsonSink::Stdout => {
+                let mut out = io::stdout().lock();
+                let _ = writeln!(out, "{line}");
+                let _ = out.flush();
+            }
+            JsonSink::Dir { path, seq } => {
+                *seq += 1;
+                let file_path = path.join(format!("{seq:08}.json"));
+                if let Ok(mut f) = std::fs::File::create(&file_path) {
+                    let _ = writeln!(f, "{line}");
+                }
+            }
+        }
+    }
+}
 
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum JsonEvent<'a> {
+    TestStart {
+        worker: usize,
+        file: &'a str,
+        name: &'a str,
+    },
     TestPass {
         worker: usize,
         file: &'a str,
@@ -477,6 +539,11 @@ struct JsonSummary {
 impl JsonReporter {
     fn on_event(&mut self, ev: &PoolEvent) {
         let mapped = match ev {
+            PoolEvent::TestStart { worker, file, name } => Some(JsonEvent::TestStart {
+                worker: *worker,
+                file,
+                name,
+            }),
             PoolEvent::TestPass {
                 worker,
                 file,
@@ -550,8 +617,7 @@ impl JsonReporter {
         };
         if let Some(e) = mapped {
             if let Ok(line) = serde_json::to_string(&e) {
-                let mut stdout = io::stdout().lock();
-                let _ = writeln!(stdout, "{line}");
+                self.write_line(&line);
             }
         }
     }
@@ -567,8 +633,7 @@ impl JsonReporter {
             worker_crashes: s.worker_crashes,
         };
         if let Ok(line) = serde_json::to_string(&summary) {
-            let mut stdout = io::stdout().lock();
-            let _ = writeln!(stdout, "{line}");
+            self.write_line(&line);
         }
     }
 }

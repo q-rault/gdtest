@@ -31,7 +31,15 @@ pub enum Command {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum Event {
-    Ready,
+    Ready {
+        /// Harness version from `addons/gdtest/gdtest_worker.gd`. Present in
+        /// harness 0.1.0+; absent (None) when an older harness is used.
+        #[serde(default)]
+        harness_version: Option<String>,
+        /// Godot engine version (major.minor.patch). Present in harness 0.1.0+.
+        #[serde(default)]
+        godot_version: Option<String>,
+    },
     Pong,
     /// Emitted by the worker immediately before calling a test function.
     /// Used by the pool to correlate a mid-test worker crash or SCRIPT

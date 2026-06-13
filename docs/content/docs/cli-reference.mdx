@@ -8,6 +8,7 @@ description: Every gdtest flag, env var, and subcommand.
 ```sh
 gdtest                               # scan cwd using discovery patterns
 gdtest <target>... [options]
+gdtest init [--no-editor] [--force]
 gdtest res://test/foo.gd::test_bar   # single test, short-circuits pool
 ```
 
@@ -42,7 +43,7 @@ Each option can be set three ways: as a CLI flag, an environment variable, or a
 | `--profile <NAME>` | — | — | Activate a `[profile.NAME]` block from `gdtest.toml` |
 | `--watch` | — | off | Re-run on `.gd` file changes; Ctrl-C to exit |
 | `--no-auto-import` | — | off | Skip one-shot `godot --import` on startup |
-| `--godot-exe <PATH>` | `GODOT_EXE` | — | Godot binary path (required) |
+| `--godot-exe <PATH>` | `GODOT_EXE` | auto-discovered | Godot binary path |
 | `--project-path <DIR>` | — | `.` | Godot project root |
 | `--harness <PATH>` | `GDTEST_HARNESS` | `addons/gdtest/gdtest_worker.gd` | Path to worker script |
 
@@ -89,6 +90,24 @@ gdtest test/ --partition hash:1/3
 ```sh
 gdtest test/ --watch   # re-runs on .gd file change; Ctrl-C to exit
 ```
+
+## Project init
+
+```sh
+gdtest init
+gdtest init --no-editor
+gdtest init --project-path /path/to/game
+gdtest init --no-editor --force
+```
+
+`gdtest init` installs the bundled `addons/gdtest/` runtime and
+`addons/gdtest_editor/` into the target Godot project by default. Pass
+`--no-editor` to install only the runtime.
+
+If a target file already exists with different contents, `init` stops rather
+than overwriting local changes. Use `--force` only when you want to replace the
+project copy with the version bundled in the current `gdtest` binary.
+
 
 ## Single-test mode
 

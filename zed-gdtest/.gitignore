@@ -1,4 +1,5 @@
 /target
+/grammars
 Cargo.lock.bak
 .env
 .env.local

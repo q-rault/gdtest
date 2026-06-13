@@ -15,7 +15,7 @@ pub async fn run(script: &str, funcs: &[String], cfg: &Config) -> Result<()> {
     let wall_start = Instant::now();
     let mut w = Worker::spawn(cfg)?;
     w.drain_stderr_to_log();
-    w.wait_for(|ev| matches!(ev, Event::Ready)).await?;
+    w.wait_for(|ev| matches!(ev, Event::Ready { .. })).await?;
     let startup_us = wall_start.elapsed().as_micros();
 
     let mut pass = 0u32;

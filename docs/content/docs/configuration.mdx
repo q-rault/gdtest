@@ -12,6 +12,8 @@ apply to all sub-projects.
 
 Priority order: **CLI flag > env var > gdtest.toml > built-in default**
 
+For `godot_exe`, the built-in default is now auto-discovery of a compatible Godot 4 binary from common command names and common install locations.
+
 ```toml
 # gdtest.toml — all fields are optional
 
@@ -68,8 +70,6 @@ Every setting has a corresponding env var that can substitute for a CLI flag:
 
 ```yaml
 - name: Run gdtest
-  env:
-    GODOT_EXE: /usr/bin/godot4
   run: gdtest test/ --profile ci --no-auto-import
 ```
 

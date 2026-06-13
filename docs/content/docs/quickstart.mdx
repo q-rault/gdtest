@@ -3,20 +3,23 @@ title: Quickstart
 description: Install gdtest, copy the harness files, and run one test.
 ---
 
-## 1. Install
+## 1. Install the CLI
 
 ```sh
 cargo install gdtest
-export GODOT_EXE=/path/to/godot4
 ```
 
-Requires Rust 1.85+ and Godot 4.3+.
+Requires Rust 1.85+. Or download a binary from [Installation](/docs/installation).
 
-If you do not want to use Cargo, download a binary from [Installation](/docs/installation).
+## 2. Initialize the project
 
-## 2. Copy the runtime addon
+Run this from your Godot project root:
 
-Copy these files into your Godot project:
+```sh
+gdtest init
+```
+
+That writes `addons/gdtest/` into your project:
 
 ```text
 your-project/
@@ -27,9 +30,33 @@ your-project/
         `-- gd_test.gd
 ```
 
-They are included in each release archive and in `addons/gdtest/` in this repo.
+> The addon and the CLI are versioned together. `gdtest init` installs the bundled runtime that matches your CLI version.
 
-## 3. Write a test
+`gdtest init` also installs the Godot editor plugin by default. Pass
+`--no-editor` if you only want the runtime harness.
+
+If you want the editor panel, enable **gdtest Editor** once in
+`Project -> Project Settings -> Plugins`.
+
+## 3. Configure Godot (if needed)
+
+gdtest first tries `--godot-exe`, `GODOT_EXE`, `.env`, and `gdtest.toml`. If none are set, it tries to auto-discover a compatible Godot 4 executable from common command names and common install locations.
+
+If your binary has a different name or lives somewhere unusual, set it in `gdtest.toml` or via an environment variable:
+
+```toml
+# gdtest.toml
+godot_exe = "godot4"   # or an absolute path
+```
+
+```sh
+# or export once in your shell / .env file
+GODOT_EXE=/path/to/godot4
+```
+
+Requires Godot 4.0+.
+
+## 4. Write a test
 
 Create `test/test_battle.gd`:
 
@@ -43,7 +70,7 @@ func test_crit_doubles_damage() -> void:
     assert_eq(Battle.calc_damage(10, 3, true), 14)
 ```
 
-## 4. Run it
+## 5. Run it
 
 ```sh
 gdtest
@@ -53,7 +80,7 @@ gdtest test/ --filter "crit"
 gdtest test/ --watch
 ```
 
-## 5. Optional config
+## 6. Optional config
 
 ```toml
 # gdtest.toml

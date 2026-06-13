@@ -16,6 +16,7 @@ extends SceneTree
 # Protocol reference: crates/gdtest/src/protocol.rs.
 
 const OUT_PREFIX := "GDTEST_OUT:"
+const HARNESS_VERSION := "0.1.0"
 
 var _current_failures: Array[String] = []
 var _pending_msg: String = ""
@@ -97,7 +98,12 @@ func _init() -> void:
 	_load_plugins()
 	_stdin_thread = Thread.new()
 	_stdin_thread.start(_stdin_reader_loop)
-	_send({"event": "ready"})
+	var _vi := Engine.get_version_info()
+	_send({
+		"event": "ready",
+		"harness_version": HARNESS_VERSION,
+		"godot_version": "%d.%d.%d" % [_vi.major, _vi.minor, _vi.patch],
+	})
 
 func _finalize() -> void:
 	# stdin thread exits on EOF; the Rust side closes its stdin during

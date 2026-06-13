@@ -18,16 +18,22 @@ Prebuilt binaries are attached to each [GitHub release](https://github.com/q-rau
 
 Optional integrations:
 
-- Runtime harness: copy `addons/gdtest/` into your project
-- Editor plugin: copy `addons/gdtest_editor/` and enable it in `Project Settings -> Plugins`
+- Runtime harness: `gdtest init`
+- Editor plugin: installed by `gdtest init`; opt out with `gdtest init --no-editor`
 - VS Code: install the `vscode-gdtest-*.vsix` artifact from a release
 - Zed: use the extension in `zed-gdtest/` or the registry package
 
-More setup details live in the published docs: [Installation docs](https://q-rault.github.io/gdtest/docs/installation).
+More setup details live in the published docs: [Installation docs](https://gdtest.onrender.com/docs/installation).
 
 ## Project setup
 
-Copy `addons/gdtest/` into your Godot project:
+Install the runtime addon into your Godot project:
+
+```sh
+gdtest init
+```
+
+This writes `addons/gdtest/` into the current project:
 
 ```text
 your-project/
@@ -41,7 +47,16 @@ your-project/
         `-- scene_runner.gd
 ```
 
+`gdtest init` also installs the Godot editor plugin by default. Skip it with:
+
+```sh
+gdtest init --no-editor
+```
+
+Enable **gdtest Editor** once in Godot at `Project -> Project Settings -> Plugins`.
+
 On first run, gdtest may execute `godot --headless --import` once so Godot builds its script class cache.
+If `--godot-exe`, `GODOT_EXE`, and `gdtest.toml` do not set a Godot binary, gdtest tries to discover a compatible Godot 4 executable automatically from common command names and common install locations.
 
 ## Quick start
 

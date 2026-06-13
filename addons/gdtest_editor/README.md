@@ -8,3 +8,9 @@ Use this plugin together with:
 
 - `addons/gdtest/` for the runtime harness
 - the `gdtest` binary for CLI runs, watch mode, coverage, migration, and CI
+
+The panel resolves the `gdtest` binary in this order:
+
+- `GDTEST_BIN`
+- nearby project-local binaries
+- `gdtest` on `PATH`

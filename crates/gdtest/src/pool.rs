@@ -52,6 +52,11 @@ impl TestItem {
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub enum PoolEvent {
+    TestStart {
+        worker: usize,
+        file: String,
+        name: String,
+    },
     TestPass {
         worker: usize,
         file: String,
@@ -408,7 +413,14 @@ async fn run_one_test(
             biased;
             ev_result = worker.next_event() => {
                 match ev_result {
-                    Ok(Event::TestStart { .. }) => { saw_start = true; }
+                    Ok(Event::TestStart { name }) => {
+                        saw_start = true;
+                        let _ = ev_tx.send(PoolEvent::TestStart {
+                            worker: id,
+                            file: item.display_script.clone(),
+                            name,
+                        });
+                    }
                     Ok(Event::TestPass { name, us }) => {
                         let ev = if runtime_errors.is_empty() {
                             PoolEvent::TestPass { worker: id, file: item.display_script.clone(), name: name.clone(), us }
@@ -601,7 +613,25 @@ async fn wait_for_ready(
         tokio::select! {
             ev = worker.next_event() => {
                 match ev {
-                    Ok(Event::Ready) => return Ok(()),
+                    Ok(Event::Ready { harness_version, godot_version }) => {
+                        if let Err(e) = crate::compat::check_harness_version(harness_version.as_deref()) {
+                            return Err(format_ready_failure(
+                                phase,
+                                e.to_string(),
+                                &startup_stderr,
+                                worker.log_path.as_deref(),
+                            ));
+                        }
+                        if let Err(e) = crate::compat::check_godot_version(godot_version.as_deref()) {
+                            return Err(format_ready_failure(
+                                phase,
+                                e.to_string(),
+                                &startup_stderr,
+                                worker.log_path.as_deref(),
+                            ));
+                        }
+                        return Ok(());
+                    }
                     Ok(_) => {}
                     Err(e) => {
                         return Err(format_ready_failure(

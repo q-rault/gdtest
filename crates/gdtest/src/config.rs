@@ -16,6 +16,7 @@ use serde::Deserialize;
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GdtestConfig {
+    pub godot_exe: Option<String>,
     pub jobs: Option<usize>,
     /// "pretty" | "tap" | "json" | "junit"
     pub reporter: Option<String>,
@@ -171,6 +172,7 @@ pub fn apply_env_defaults() -> anyhow::Result<()> {
         cfg.apply_profile(&name)?;
     }
 
+    set_if_absent("GODOT_EXE", cfg.godot_exe);
     set_if_absent("GDTEST_REPORTER", cfg.reporter);
     set_if_absent("GDTEST_ISOLATION", cfg.isolation);
     set_if_absent("GDTEST_TIMEOUT", cfg.timeout.map(|t| t.to_string()));

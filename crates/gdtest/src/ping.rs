@@ -10,7 +10,7 @@ pub async fn run(count: u32, cfg: &Config) -> Result<()> {
     let t_startup = Instant::now();
     let mut w = Worker::spawn(cfg)?;
     w.drain_stderr_to_log();
-    w.wait_for(|ev| matches!(ev, Event::Ready)).await?;
+    w.wait_for(|ev| matches!(ev, Event::Ready { .. })).await?;
     let startup_ms = t_startup.elapsed().as_secs_f64() * 1000.0;
 
     let mut rtts_us: Vec<u128> = Vec::with_capacity(count as usize);

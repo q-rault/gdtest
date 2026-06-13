@@ -21,7 +21,7 @@ fn parse_target(target: &str) -> Result<(&str, &str)> {
 async fn run_single(script: &str, func: &str, cfg: &Config) -> Result<()> {
     let mut w = Worker::spawn(cfg)?;
     w.drain_stderr_to_log();
-    w.wait_for(|ev| matches!(ev, Event::Ready)).await?;
+    w.wait_for(|ev| matches!(ev, Event::Ready { .. })).await?;
     w.send(&Command::RunTest {
         script: script.to_string(),
         func: func.to_string(),

@@ -3,6 +3,7 @@ import * as cp from 'child_process';
 import * as path from 'path';
 
 const GDTEST_OUT_PREFIX = 'GDTEST_OUT:';
+const INSTALL_DOCS_URL = 'https://github.com/q-rault/gdtest/releases';
 
 interface GdtestEvent {
   event: string;
@@ -18,6 +19,17 @@ export function activate(context: vscode.ExtensionContext): void {
   const controller = vscode.tests.createTestController('gdtest', 'gdtest');
   context.subscriptions.push(controller);
   context.subscriptions.push(outputChannel);
+
+  const gdtestExe = vscode.workspace.getConfiguration('gdtest').get<string>('executablePath', 'gdtest');
+  checkCli(gdtestExe).then((found) => {
+    if (!found) {
+      vscode.window
+        .showWarningMessage('gdtest CLI not found. Install it to run tests.', 'Show Installation Guide')
+        .then((choice) => {
+          if (choice) vscode.env.openExternal(vscode.Uri.parse(INSTALL_DOCS_URL));
+        });
+    }
+  });
 
   controller.refreshHandler = () => discoverTests(controller);
   discoverTests(controller);
@@ -81,6 +93,7 @@ async function runTests(
 ): Promise<void> {
   const config = vscode.workspace.getConfiguration('gdtest');
   const gdtestPath = config.get<string>('executablePath', 'gdtest');
+  const godotExe = config.get<string>('godotExecutablePath', '');
   const testDir = config.get<string>('testDirectory', 'test/');
   const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
 
@@ -88,11 +101,14 @@ async function runTests(
   outputChannel.clear();
   outputChannel.show(true);
 
+  const godotFlag = godotExe ? ['--godot-exe', godotExe] : [];
+
   // Determine which files to run
-  const args: string[] =
+  const fileArgs: string[] =
     request.include && request.include.length > 0
       ? request.include.map((item) => path.relative(workspaceRoot, item.uri!.fsPath))
       : [testDir];
+  const args = [...godotFlag, ...fileArgs];
 
   outputChannel.appendLine(`$ ${gdtestPath} ${args.join(' ')}\n`);
 
@@ -188,6 +204,12 @@ function formatUs(us: number): string {
   if (us < 1000) return `${us} µs`;
   if (us < 1_000_000) return `${(us / 1000).toFixed(2)} ms`;
   return `${(us / 1_000_000).toFixed(2)} s`;
+}
+
+function checkCli(gdtestPath: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    cp.execFile(gdtestPath, ['--version'], { timeout: 3000 }, (err) => resolve(!err));
+  });
 }
 
 export function deactivate(): void {}

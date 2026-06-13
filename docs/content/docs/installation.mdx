@@ -24,17 +24,39 @@ Or download a binary from the [GitHub releases page](https://github.com/q-rault/
 
 Put the `gdtest` binary on your `PATH`.
 
-Set the Godot executable:
+If you do not want to put it on `PATH`, the Godot editor plugin can still use
+`GDTEST_BIN=/path/to/gdtest`.
 
-```sh
-export GODOT_EXE=/path/to/godot4
+## 2. Set the Godot executable (if needed)
+
+gdtest first tries explicit configuration. If nothing is set, it falls back to best-effort auto-discovery across common command names and common install locations.
+
+1. `--godot-exe` CLI flag
+2. `GODOT_EXE` environment variable
+3. `GODOT_EXE` in a `.env` file at your project root
+4. `godot_exe` key in `gdtest.toml`
+
+If your binary is named differently (e.g. `godot4`) or is not on `PATH`, set it in any of the above locations:
+
+```toml
+# gdtest.toml
+godot_exe = "godot4"
 ```
 
-On Windows, set `GODOT_EXE` as a user environment variable.
+```sh
+# .env (auto-loaded by gdtest from the project root)
+GODOT_EXE=/Applications/Godot.app/Contents/MacOS/Godot
+```
 
-## 2. Copy the runtime addon
+## 3. Initialize the project
 
-Copy `addons/gdtest/` into your Godot project:
+Run this from your Godot project root:
+
+```sh
+gdtest init
+```
+
+This installs `addons/gdtest/` into the project:
 
 ```text
 your-project/
@@ -47,12 +69,22 @@ your-project/
 
 The runtime addon is also included in each release archive.
 
-## 3. Optional editor integrations
+## 4. Editor integrations
 
 Godot editor plugin:
 
-1. Copy `addons/gdtest_editor/` into your project root.
+1. `gdtest init` installs it by default.
 2. Enable **gdtest Editor** in Project -> Project Settings -> Plugins.
+3. The panel resolves the gdtest binary in this order:
+   - `GDTEST_BIN`
+   - nearby project-local binaries
+   - `gdtest` on `PATH`
+
+If you only want the runtime harness:
+
+```sh
+gdtest init --no-editor
+```
 
 VS Code:
 
@@ -77,6 +109,16 @@ Zed:
 
 - macOS / Linux: `~/.config/zed/extensions/gdtest/`
 - Windows: `%APPDATA%\\Zed\\extensions\\gdtest\\`
+
+## Compatibility
+
+| CLI version | Required harness (`addons/gdtest/`) | Supported Godot |
+| --- | --- | --- |
+| 0.1.x | 0.1.x | 4.0+ |
+
+The addon and CLI are versioned together and released in the same archive. If you mix versions, gdtest will print a clear error at startup pointing to this table.
+
+You can always check which harness version is installed by looking for `HARNESS_VERSION` at the top of `addons/gdtest/gdtest_worker.gd`.
 
 ## Verify
 

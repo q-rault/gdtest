@@ -3,12 +3,16 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
 use clap::{Parser, Subcommand};
+use serde::Serialize;
 
 mod aggregate;
 mod bench;
+mod compat;
 mod config;
 mod coverage;
+mod godot_discovery;
 mod html_report;
+mod init;
 mod migrate;
 mod mutate_runner;
 mod ping;
@@ -123,6 +127,12 @@ struct Cli {
     #[arg(long)]
     no_rewrite: bool,
 
+    /// Write JSON reporter output as numbered files under DIR instead of stdout.
+    /// Each event gets its own `<DIR>/NNNNNNNN.json` file, which the editor
+    /// plugin reads sequentially for incremental progress display.
+    #[arg(long, value_name = "DIR", global = true)]
+    output_dir: Option<String>,
+
     /// Instrument source files for coverage and write `coverage/lcov.info` after the run.
     #[arg(long)]
     coverage: bool,
@@ -197,6 +207,15 @@ struct WorkerArgs {
 
 #[derive(Subcommand)]
 enum Subcmd {
+    /// Install the runtime addon into a Godot project.
+    Init {
+        /// Skip installing the Godot editor plugin under addons/gdtest_editor/.
+        #[arg(long = "no-editor", default_value_t = true, action = clap::ArgAction::SetFalse)]
+        editor: bool,
+        /// Overwrite existing addon files when they differ from the bundled version.
+        #[arg(long)]
+        force: bool,
+    },
     /// Internal: spawn a worker and time N round-trip pings (M0 sanity check).
     #[command(name = "__ping", hide = true)]
     Ping {
@@ -254,13 +273,21 @@ enum MigrateSubcmd {
 }
 
 fn main() -> anyhow::Result<()> {
-    // Load gdtest.toml and inject values as env vars before clap parses.
-    // Priority: CLI flag > env var > gdtest.toml > built-in default.
+    // Load .env from cwd (silently ignore if absent).
+    // Priority: CLI flag > env var > .env > gdtest.toml > built-in default.
+    dotenvy::dotenv().ok();
     config::apply_env_defaults()?;
 
     let cli = Cli::parse();
 
     match &cli.command {
+        Some(Subcmd::Init { editor, force }) => {
+            return init::run(init::InitOptions {
+                project_path: cli.worker.project_path.clone(),
+                editor: *editor,
+                force: *force,
+            });
+        }
         Some(Subcmd::Ping { count }) => {
             let cfg = cfg_or_die(&cli)?;
             return ping::run(*count, &cfg);
@@ -338,7 +365,9 @@ fn main() -> anyhow::Result<()> {
         // Skip when --list: discovery doesn't touch Godot, no need to import.
         ensure_class_cache(&cfg, &targets)?;
     }
-    let num_cpus = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+    let num_cpus = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1);
     let jobs = cli.jobs.unwrap_or(num_cpus).max(1);
     let reporter = cli.reporter.unwrap_or(reporter::ReporterKind::Pretty);
     let isolation = cli.isolation.unwrap_or(pool::IsolationMode::File);
@@ -396,7 +425,36 @@ fn main() -> anyhow::Result<()> {
         cli.bench,
         cli.changed_only,
         cli.changed_since,
+        cli.output_dir,
     )
+}
+
+#[derive(Serialize)]
+struct ListedTest<'a> {
+    kind: &'static str,
+    file: &'a str,
+    name: &'a str,
+}
+
+fn emit_list(items: &[pool::TestItem], rkind: reporter::ReporterKind) -> anyhow::Result<()> {
+    match rkind {
+        reporter::ReporterKind::Json => {
+            for it in items {
+                let line = serde_json::to_string(&ListedTest {
+                    kind: "test",
+                    file: &it.display_script,
+                    name: &it.func,
+                })?;
+                println!("{line}");
+            }
+        }
+        _ => {
+            for it in items {
+                println!("{} :: {}", it.display_script, it.func);
+            }
+        }
+    }
+    Ok(())
 }
 
 fn run_watch(
@@ -520,11 +578,15 @@ fn targets_have_missing_uid(targets: &[String], project_path: &std::path::Path) 
 }
 
 fn cfg_or_die(cli: &Cli) -> anyhow::Result<worker::Config> {
-    let godot_exe = cli
-        .worker
-        .godot_exe
-        .clone()
-        .ok_or_else(|| anyhow::anyhow!("GODOT_EXE env var or --godot-exe flag required"))?;
+    let godot_exe = if let Some(path) = &cli.worker.godot_exe {
+        path.clone()
+    } else {
+        let resolved = godot_discovery::resolve(Path::new(&cli.worker.project_path))?;
+        if let Some(warning) = resolved.warning.as_deref() {
+            eprintln!("{warning}");
+        }
+        resolved.path
+    };
     let plugins = config::load_plugins(&cli.worker.project_path);
     Ok(worker::Config {
         godot_exe,
@@ -561,6 +623,7 @@ async fn run_pool(
     bench_mode: bool,
     changed_only: bool,
     changed_since: Option<String>,
+    output_dir: Option<String>,
 ) -> anyhow::Result<()> {
     let project_abs = PathBuf::from(&cfg.project_path).canonicalize()?;
 
@@ -676,9 +739,7 @@ async fn run_pool(
     }
 
     if list_only {
-        for it in &items {
-            println!("{} :: {}", it.display_script, it.func);
-        }
+        emit_list(&items, rkind)?;
         return Ok(());
     }
 
@@ -703,7 +764,14 @@ async fn run_pool(
         pool::PoolOptions {
             jobs,
             cfg,
-            reporter: reporter::Reporter::new(rkind),
+            reporter: match &output_dir {
+                Some(p) => reporter::Reporter::new_to_dir(rkind, std::path::Path::new(p))
+                    .unwrap_or_else(|e| {
+                        eprintln!("gdtest: --output-dir: {e}");
+                        reporter::Reporter::new(rkind)
+                    }),
+                None => reporter::Reporter::new(rkind),
+            },
             isolation,
             timeout_ms,
             fail_fast,
@@ -1008,8 +1076,7 @@ fn get_changed_gd_files(project_abs: &Path, since_ref: Option<&str>) -> Vec<Stri
     if let Ok(out) = cmd.output() {
         if let Ok(text) = std::str::from_utf8(&out.stdout) {
             for line in text.lines().filter(|l| l.ends_with(".gd")) {
-                if let Ok(rp) = gdtest_analysis::to_res_path(&project_abs.join(line), project_abs)
-                {
+                if let Ok(rp) = gdtest_analysis::to_res_path(&project_abs.join(line), project_abs) {
                     paths.push(rp);
                 }
             }

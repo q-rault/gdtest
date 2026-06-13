@@ -8,7 +8,9 @@
   "engines": {
     "vscode": "^1.75.0"
   },
-  "categories": ["Testing"],
+  "categories": [
+    "Testing"
+  ],
   "activationEvents": [
     "workspaceContains:**/test_*.gd",
     "onCommand:gdtest.runAll",
@@ -34,6 +36,11 @@
           "default": "gdtest",
           "description": "Path to the gdtest executable. Defaults to 'gdtest' (must be on PATH)."
         },
+        "gdtest.godotExecutablePath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the Godot executable. Optional — defaults to 'godot' on PATH. Set this only if your Godot binary has a different name or is not on PATH."
+        },
         "gdtest.testDirectory": {
           "type": "string",
           "default": "test/",
@@ -53,7 +60,7 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "package": "vsce package"
+    "package": "tsc -p ./ && vsce package"
   },
   "devDependencies": {
     "@types/vscode": "^1.75.0",
