@@ -137,8 +137,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Rust toolchain
         run: rustup toolchain install stable --profile minimal
-      - name: Publish gdtest-proto
-        run: cargo publish -p gdtest-proto --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
       - name: Publish gdtest-discovery
         run: cargo publish -p gdtest-discovery --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
       - name: Publish gdtest

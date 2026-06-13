@@ -38,8 +38,8 @@ The workflow then:
    get the runtime addon drop-in alongside).
 2. Creates a GitHub release with all archives attached + auto-generated
    notes.
-3. Publishes the three crates to crates.io in dependency order:
-   `gdtest-protocol` → `gdtest-discovery` → `gdtest`.
+3. Publishes the two crates to crates.io in dependency order:
+   `gdtest-discovery` → `gdtest`.
 
 After the workflow finishes:
 

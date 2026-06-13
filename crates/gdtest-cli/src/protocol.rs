@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 pub const GDTEST_OUT_PREFIX: &str = "GDTEST_OUT:";
 
-/// Orchestrator → worker. Tag field is `cmd`.
+/// Orchestrator -> worker. Tag field is `cmd`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
 pub enum Command {
@@ -27,7 +27,7 @@ pub enum Command {
     Shutdown,
 }
 
-/// Worker → orchestrator. Tag field is `event`.
+/// Worker -> orchestrator. Tag field is `event`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum Event {
@@ -52,12 +52,12 @@ pub enum Event {
         name: String,
         message: String,
     },
-    /// Test called `pending()` — intentionally incomplete, not a failure.
+    /// Test called `pending()` - intentionally incomplete, not a failure.
     TestPending {
         name: String,
         message: String,
     },
-    /// Test called `skip()` — intentionally excluded from this run.
+    /// Test called `skip()` - intentionally excluded from this run.
     TestSkip {
         name: String,
         message: String,

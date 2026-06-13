@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
-use gdtest_protocol::{Command, Event};
 use owo_colors::OwoColorize;
 
+use crate::protocol::{Command, Event};
 use crate::worker::{Config, Worker};
 
 /// `script::func` — exactly one test.

@@ -13,6 +13,7 @@ mod migrate;
 mod mutate_runner;
 mod ping;
 mod pool;
+mod protocol;
 mod reporter;
 mod run;
 mod watch;

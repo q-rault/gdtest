@@ -6,8 +6,8 @@
 use std::time::Instant;
 
 use anyhow::{anyhow, Result};
-use gdtest_protocol::{Command, Event};
 
+use crate::protocol::{Command, Event};
 use crate::worker::{Config, Worker};
 
 #[tokio::main(flavor = "current_thread")]

@@ -2,7 +2,6 @@
 resolver = "2"
 members = [
     "crates/gdtest-cli",
-    "crates/gdtest-protocol",
     "crates/gdtest-discovery",
 ]
 
@@ -31,7 +30,6 @@ anyhow = "1"
 thiserror = "2"
 toml = "0.8"
 
-gdtest-protocol = { path = "crates/gdtest-protocol", version = "0.1.0" }
 gdtest-discovery = { path = "crates/gdtest-discovery", version = "0.1.0" }
 
 [profile.release]
