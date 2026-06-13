@@ -6,7 +6,7 @@
 use std::time::Instant;
 
 use anyhow::{anyhow, Result};
-use gdtest_proto::{Command, Event};
+use gdtest_protocol::{Command, Event};
 
 use crate::worker::{Config, Worker};
 

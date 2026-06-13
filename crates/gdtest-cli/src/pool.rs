@@ -20,7 +20,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
-use gdtest_proto::{Command, Event};
+use gdtest_protocol::{Command, Event};
 use tokio::sync::{mpsc, Mutex};
 
 use crate::reporter::{Reporter, Summary};

@@ -6,7 +6,7 @@ use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{anyhow, Context, Result};
-use gdtest_proto::{Event, GDTEST_OUT_PREFIX};
+use gdtest_protocol::{Event, GDTEST_OUT_PREFIX};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command as TokioCommand};
 use tokio::sync::mpsc;
@@ -183,7 +183,7 @@ impl Worker {
     }
 
     pub async fn shutdown(mut self) -> Result<std::process::ExitStatus> {
-        let line = serde_json::to_string(&gdtest_proto::Command::Shutdown)? + "\n";
+        let line = serde_json::to_string(&gdtest_protocol::Command::Shutdown)? + "\n";
         self.stdin.write_all(line.as_bytes()).await.ok();
         drop(self.stdin);
         tokio::time::timeout(std::time::Duration::from_secs(5), self.child.wait())

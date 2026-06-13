@@ -179,7 +179,7 @@ dependencies = [
  "anyhow",
  "clap",
  "gdtest-discovery",
- "gdtest-proto",
+ "gdtest-protocol",
  "libc",
  "notify",
  "num_cpus",
@@ -205,7 +205,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "gdtest-proto"
+name = "gdtest-protocol"
 version = "0.1.0"
 dependencies = [
  "serde",

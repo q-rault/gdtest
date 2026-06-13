@@ -13,7 +13,7 @@ extends SceneTree
 #   Tests call `Engine.get_meta("gdt_harness").expect(cond, msg)` for
 #   assertions and `await h.simulate_physics_frames(n)` to advance frames.
 #
-# Protocol reference: crates/gdtest-proto/src/lib.rs.
+# Protocol reference: crates/gdtest-protocol/src/lib.rs.
 
 const OUT_PREFIX := "GDTEST_OUT:"
 

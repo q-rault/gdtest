@@ -27,7 +27,7 @@ path = "src/main.rs"
 libc = "0.2"
 
 [dependencies]
-gdtest-proto.workspace = true
+gdtest-protocol.workspace = true
 gdtest-discovery.workspace = true
 serde.workspace = true
 serde_json.workspace = true

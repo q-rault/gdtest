@@ -1,5 +1,5 @@
 [package]
-name = "gdtest-proto"
+name = "gdtest-protocol"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
