@@ -18,7 +18,7 @@ build:
 
 # GDScript self-tests.
 test-gd: build
-    ./target/release/gdtest test/ --harness harness/gdtest_worker.gd --reporter tap
+    ./target/release/gdtest test/ --harness addons/gdtest/gdtest_worker.gd --reporter tap
 
 # Shell-level CLI integration tests.
 test-cli: build
@@ -26,7 +26,7 @@ test-cli: build
 
 # Docs examples — region-marked snippets in test/docs/ must pass.
 test-docs: build
-    ./target/release/gdtest test/docs/ --harness harness/gdtest_worker.gd --reporter tap
+    ./target/release/gdtest test/docs/ --harness addons/gdtest/gdtest_worker.gd --reporter tap
 
 # Benchmark gdtest vs GUT vs gdUnit4. Set BENCH_RUNS=1 for a quick smoke run.
 bench: build

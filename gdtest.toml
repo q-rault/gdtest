@@ -1,4 +1,4 @@
-harness = "harness/gdtest_worker.gd"
+harness = "addons/gdtest/gdtest_worker.gd"
 
 # Only scan test files; exclude fixtures/, support/, and docs dungeon helpers.
 patterns = ["test/test_*.gd", "test/docs/**/test_*.gd"]

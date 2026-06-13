@@ -18,8 +18,8 @@ GODOT_EXE="${GODOT_EXE:-godot4}"
 GDTEST_BIN="${GDTEST_BIN:-$GDTEST_ROOT/target/release/gdtest}"
 RESULTS_DIR="${RESULTS_DIR:-$SCRIPT_DIR/results/$(basename "$GAME_DIR")-gut-eval}"
 TEST_DIR="${TEST_DIR:-$GAME_DIR/test}"
-HARNESS_DEST="${HARNESS_DEST:-$GAME_DIR/harness}"
-HARNESS_PATH="${HARNESS_PATH:-harness/gdtest_worker.gd}"
+HARNESS_DEST="${HARNESS_DEST:-$GAME_DIR/addons/gdtest}"
+HARNESS_PATH="${HARNESS_PATH:-addons/gdtest/gdtest_worker.gd}"
 JOBS="${JOBS:-4}"
 ISOLATION="${ISOLATION:-file}"
 
@@ -75,7 +75,7 @@ PY
 
 copy_harness() {
     mkdir -p "$HARNESS_DEST"
-    cp "$GDTEST_ROOT"/harness/* "$HARNESS_DEST/"
+    cp "$GDTEST_ROOT"/addons/gdtest/* "$HARNESS_DEST/"
 }
 
 count_matches() {

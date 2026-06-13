@@ -1,7 +1,7 @@
 class_name GdTestCompatGdUnit
 extends RefCounted
 
-const GDUNIT4_CHAIN := preload("res://harness/gdunit4_chain.gd")
+const GDUNIT4_CHAIN := preload("res://addons/gdtest/gdunit4_chain.gd")
 
 # GdTestCompatGdUnit — compatibility base class for tests written in GDUnit4 style.
 #

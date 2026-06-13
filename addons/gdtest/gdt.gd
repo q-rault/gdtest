@@ -3,7 +3,7 @@ extends RefCounted
 
 # gdt — user-facing assertion + async helpers for gdtest tests.
 #
-# Drop harness/gdt.gd and harness/gdtest_worker.gd into your project
+# Drop addons/gdtest/gdt.gd and addons/gdtest/gdtest_worker.gd into your project
 # (typically under `addons/gdtest/`). Then in any `test_*.gd` file,
 # call `Gdt.expect(...)` / `Gdt.expect_eq(...)` — no imports needed,
 # `class_name Gdt` registers the symbol globally.

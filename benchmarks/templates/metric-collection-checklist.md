@@ -22,7 +22,7 @@ Goal: measure install time, manual steps, and blockers.
 ```sh
 time (
   mkdir -p "$GAME_DIR/addons/gdtest" &&
-  cp harness/gd_test.gd harness/gdt.gd harness/gdtest_worker.gd "$GAME_DIR/addons/gdtest/" &&
+  cp addons/gdtest/gd_test.gd addons/gdtest/gdt.gd addons/gdtest/gdtest_worker.gd "$GAME_DIR/addons/gdtest/" &&
   "$GDTEST_BIN" "$TEST_DIR" --project-path "$GAME_DIR" --list
 )
 ```

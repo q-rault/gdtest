@@ -51,7 +51,7 @@ GODOT_PROJECT_PATH=~/my-game MANIFEST=~/my-game/bench.manifest just bench-projec
 | `--manifest FILE` | none | One `path/to/test.gd [file\|test]` line per file |
 | `--no-warmup` | off | Skip the initial `godot --import` pass |
 
-`BENCH_RUNS` env var sets the default run count (useful in CI: `BENCH_RUNS=1 make bench`).
+`BENCH_RUNS` env var sets the default run count (useful in CI: `BENCH_RUNS=1 just bench`).
 
 ## Output
 

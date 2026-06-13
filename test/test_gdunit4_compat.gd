@@ -1,4 +1,4 @@
-extends "res://harness/gdunit4_compat.gd"
+extends "res://addons/gdtest/gdunit4_compat.gd"
 
 # ── Lifecycle hooks ────────────────────────────────────────────────────────────
 
