@@ -4,6 +4,11 @@ Copy this folder into your Godot project as `addons/gdtest_editor/`, then enable
 
 This plugin is optional. It provides an editor-side test panel; the actual runner and test API still live in `addons/gdtest/` and the `gdtest` CLI.
 
+The panel includes:
+
+- a `Results` tab with the test tree and timings
+- an `Output` tab that shows the launched CLI command, test progress, failure details, worker crashes, and captured stderr noise when available
+
 Use this plugin together with:
 
 - `addons/gdtest/` for the runtime harness

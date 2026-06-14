@@ -7,11 +7,14 @@ const _SPINNER_CHARS := ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","
 var editor_interface: EditorInterface
 
 var _tree: Tree
+var _tabs: TabContainer
+var _output_log: RichTextLabel
 var _run_all_btn: Button
 var _run_file_btn: Button
 var _rerun_failed_btn: Button
 var _kill_btn: Button
 var _watch_btn: CheckButton
+var _clear_output_btn: Button
 var _status_label: Label
 var _gdtest_path: String = "gdtest"
 var _failed_tests: Array[Dictionary] = []
@@ -98,12 +101,25 @@ func _build_ui() -> void:
 	_watch_btn.tooltip_text = "Re-run all tests automatically when a file is saved"
 	toolbar.add_child(_watch_btn)
 
+	_clear_output_btn = Button.new()
+	_clear_output_btn.text = "Clear Output"
+	_clear_output_btn.tooltip_text = "Clear the gdtest output log"
+	_clear_output_btn.disabled = true
+	_clear_output_btn.pressed.connect(_clear_output)
+	toolbar.add_child(_clear_output_btn)
+
 	_status_label = Label.new()
 	_status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	toolbar.add_child(_status_label)
 
+	_tabs = TabContainer.new()
+	_tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox.add_child(_tabs)
+
 	_tree = Tree.new()
+	_tree.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_tree.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_tree.columns = 2
 	_tree.set_column_title(0, "Test")
@@ -117,7 +133,25 @@ func _build_ui() -> void:
 	_tree.item_activated.connect(_on_item_activated)
 	_tree.item_mouse_selected.connect(_on_item_mouse_selected)
 	_tree.item_selected.connect(_on_item_selected)
-	vbox.add_child(_tree)
+	var results_tab := MarginContainer.new()
+	results_tab.name = "Results"
+	results_tab.add_child(_tree)
+	_tree.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_tabs.add_child(results_tab)
+
+	_output_log = RichTextLabel.new()
+	_output_log.name = "Output"
+	_output_log.bbcode_enabled = false
+	_output_log.selection_enabled = true
+	_output_log.scroll_following = true
+	_output_log.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_output_log.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_output_log.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var output_tab := MarginContainer.new()
+	output_tab.name = "Output"
+	output_tab.add_child(_output_log)
+	_output_log.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_tabs.add_child(output_tab)
 
 	_watch_timer = Timer.new()
 	_watch_timer.wait_time = 1.5
@@ -623,7 +657,7 @@ func _refresh_run_status_label() -> void:
 		var total_us := 0
 		for t: Variant in _run_file_time_us.values():
 			total_us += int(t)
-		var time_str := "  " + _fmt_us(total_us)
+		var time_str := "  |  " + _fmt_us(total_us)
 		if fail_count == 0:
 			_status_label.text = "✓  %d%s" % [total_expected, time_str]
 			_status_label.add_theme_color_override("font_color", Color(0.4, 0.9, 0.4))
@@ -769,9 +803,13 @@ func _run(res_paths: Array[String], filter: String, preserve_existing: bool = fa
 		"gdtest_out_%d" % Time.get_ticks_msec()
 	)
 	args.append_array(["--output-dir", _gdtest_out_dir])
+	_append_log_line("")
+	_append_log_line("$ %s" % _format_cli_command(args))
 
 	_run_start_time = Time.get_ticks_msec()
 	_gdtest_pid = OS.create_process(_gdtest_path, args)
+	if _gdtest_pid < 0:
+		_append_log_line("[launch-error] failed to start gdtest")
 
 	if _poll_timer == null:
 		_poll_timer = Timer.new()
@@ -787,6 +825,7 @@ func _poll_gdtest() -> void:
 
 	if still_running and elapsed_s >= _MAX_RUN_SECONDS:
 		print("[gdtest] timeout after %ds — killing pid=%d" % [_MAX_RUN_SECONDS, _gdtest_pid])
+		_append_log_line("[timeout] gdtest exceeded %d seconds and was killed" % _MAX_RUN_SECONDS)
 		OS.kill(_gdtest_pid)
 		_poll_timer.stop()
 		_gdtest_pid = -1
@@ -805,6 +844,7 @@ func _poll_gdtest() -> void:
 func _on_kill_pressed() -> void:
 	if _gdtest_pid >= 0:
 		print("[gdtest] killing pid=", _gdtest_pid)
+		_append_log_line("[kill] terminated gdtest process pid=%d" % _gdtest_pid)
 		OS.kill(_gdtest_pid)
 		_poll_timer.stop()
 		_gdtest_pid = -1
@@ -817,6 +857,7 @@ func _set_running(running: bool) -> void:
 	_run_file_btn.disabled = running or _tree.get_selected() == null
 	_rerun_failed_btn.disabled = running or _failed_tests.is_empty()
 	_kill_btn.disabled = not running
+	_clear_output_btn.disabled = running and _output_log.get_parsed_text().is_empty()
 
 func _tick_spinner() -> void:
 	_spinner_frame = (_spinner_frame + 1) % _SPINNER_CHARS.size()
@@ -848,7 +889,14 @@ func _handle_json_event(raw: String) -> void:
 	if not data is Dictionary:
 		return
 	var kind: String = data.get("kind", "")
-	if kind == "summary" or kind == "stderr_noise" or kind == "worker_crashed":
+	if kind == "summary":
+		_append_summary_log(data)
+		return
+	if kind == "stderr_noise":
+		_append_stderr_log(data)
+		return
+	if kind == "worker_crashed":
+		_append_worker_crash_log(data)
 		return
 	var name: String = data.get("name", "")
 	var file: String = data.get("file", "")
@@ -856,9 +904,27 @@ func _handle_json_event(raw: String) -> void:
 		return
 	match kind:
 		"test_start":
+			_append_log_line("[run] %s :: %s" % [file, name])
 			_set_test_running(file, name)
 			_refresh_run_status_label()
-		"test_pass", "test_fail", "test_error", "test_skip", "test_pending":
+		"test_pass":
+			_append_log_line("[pass] %s :: %s (%s)" % [file, name, _fmt_us(data.get("us", 0))])
+			_set_test_result(file, name, kind, data.get("us", 0))
+			_refresh_run_status_label()
+		"test_fail":
+			_append_test_fail_log(data)
+			_set_test_result(file, name, kind, data.get("us", 0))
+			_refresh_run_status_label()
+		"test_error":
+			_append_log_line("[error] %s :: %s" % [file, name])
+			_append_multiline_log(str(data.get("message", "")), "  ")
+			_set_test_result(file, name, kind, data.get("us", 0))
+			_refresh_run_status_label()
+		"test_skip", "test_pending":
+			var label := "skip" if kind == "test_skip" else "pending"
+			var message := str(data.get("message", "")).strip_edges()
+			var suffix := ": %s" % message if message != "" else ""
+			_append_log_line("[%s] %s :: %s%s" % [label, file, name, suffix])
 			_set_test_result(file, name, kind, data.get("us", 0))
 			_refresh_run_status_label()
 
@@ -885,8 +951,85 @@ func _parse_and_display() -> void:
 	_spinner_timer.stop()
 	_refresh_run_status_label()
 	_rerun_failed_btn.disabled = _failed_tests.is_empty()
+	_clear_output_btn.disabled = _output_log.get_parsed_text().is_empty()
 	for file: String in _run_target_files:
 		_update_file_item(file)
+
+func _clear_output() -> void:
+	_output_log.clear()
+	_clear_output_btn.disabled = true
+
+func _append_log_line(line: String) -> void:
+	if _output_log == null:
+		return
+	if line.begins_with("[fail]"):
+		_output_log.push_color(Color(1.0, 0.37, 0.37))
+		_output_log.add_text(line + "\n")
+		_output_log.pop()
+	elif line.begins_with("[pass]"):
+		_output_log.push_color(Color(0.40, 0.90, 0.40))
+		_output_log.add_text(line + "\n")
+		_output_log.pop()
+	else:
+		_output_log.add_text(line + "\n")
+	_clear_output_btn.disabled = false
+
+func _append_multiline_log(text: String, prefix: String = "") -> void:
+	var cleaned := text.strip_edges()
+	if cleaned == "":
+		return
+	for line: String in cleaned.split("\n"):
+		_append_log_line(prefix + line)
+
+func _append_summary_log(data: Dictionary) -> void:
+	_append_log_line(
+		"[summary] pass=%d fail=%d error=%d pending=%d skipped=%d worker_crashes=%d" % [
+			int(data.get("pass", 0)),
+			int(data.get("fail", 0)),
+			int(data.get("error", 0)),
+			int(data.get("pending", 0)),
+			int(data.get("skipped", 0)),
+			int(data.get("worker_crashes", 0)),
+		]
+	)
+
+func _append_stderr_log(data: Dictionary) -> void:
+	var worker := int(data.get("worker", -1))
+	var line := str(data.get("line", "")).strip_edges()
+	if line == "":
+		return
+	_append_log_line("[stderr][worker %d] %s" % [worker, line])
+
+func _append_worker_crash_log(data: Dictionary) -> void:
+	var worker := int(data.get("worker", -1))
+	var current_file := str(data.get("current_file", ""))
+	var message := str(data.get("message", "")).strip_edges()
+	var suffix := " while running %s" % current_file if current_file != "" else ""
+	_append_log_line("[crash][worker %d]%s" % [worker, suffix])
+	if message != "":
+		_append_multiline_log(message, "  ")
+
+func _append_test_fail_log(data: Dictionary) -> void:
+	var file := str(data.get("file", ""))
+	var name := str(data.get("name", ""))
+	_append_log_line("[fail] %s :: %s (%s)" % [file, name, _fmt_us(data.get("us", 0))])
+	var failures: Variant = data.get("failures", [])
+	if failures is Array:
+		for failure: Variant in failures:
+			_append_multiline_log(str(failure), "  ")
+
+func _shell_quote(arg: String) -> String:
+	if arg.is_empty():
+		return "\"\""
+	if arg.contains(" ") or arg.contains("\t") or arg.contains("\""):
+		return "\"" + arg.replace("\"", "\\\"") + "\""
+	return arg
+
+func _format_cli_command(args: Array[String]) -> String:
+	var parts: Array[String] = [_shell_quote(_gdtest_path)]
+	for arg: String in args:
+		parts.append(_shell_quote(arg))
+	return " ".join(parts)
 
 # --- Utilities ---
 
