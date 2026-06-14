@@ -195,7 +195,12 @@ async fn run_iteration(opts: &WatchOptions, changed: &[PathBuf]) -> Result<()> {
         }
         for e in entries {
             if e.kind == gdtest_analysis::TestKind::Normal {
-                items.push(TestItem::new(file.clone(), e.name));
+                let item_isolation = match e.isolation {
+                    Some(gdtest_analysis::IsolationDirective::File) => IsolationMode::File,
+                    Some(gdtest_analysis::IsolationDirective::Test) => IsolationMode::Test,
+                    None => opts.isolation,
+                };
+                items.push(TestItem::new(file.clone(), e.name, item_isolation));
             }
         }
     }

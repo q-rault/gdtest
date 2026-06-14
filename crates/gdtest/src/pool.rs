@@ -36,15 +36,18 @@ pub struct TestItem {
     pub func: String,
     /// Original res:// path shown to the user in all reporter output.
     pub display_script: String,
+    /// Effective isolation for this specific test item.
+    pub isolation: IsolationMode,
 }
 
 impl TestItem {
-    pub fn new(script: String, func: String) -> Self {
+    pub fn new(script: String, func: String, isolation: IsolationMode) -> Self {
         let display_script = script.clone();
         Self {
             script,
             func,
             display_script,
+            isolation,
         }
     }
 }
@@ -246,7 +249,7 @@ async fn worker_loop(
     queue: Arc<Mutex<VecDeque<(TestItem, u32)>>>,
     cancel: Arc<AtomicBool>,
     ev_tx: mpsc::UnboundedSender<PoolEvent>,
-    isolation: IsolationMode,
+    _default_isolation: IsolationMode,
     timeout_ms: u64,
     timeout_warn_ms: Option<u64>,
 ) {
@@ -330,6 +333,7 @@ async fn worker_loop(
         if let Some(result) = maybe_result {
             // Test completed normally. Check retry eligibility:
             // only TestFail / TestError are retried, not Pending / Skip / Pass.
+            let item_isolation = item.isolation;
             let retryable = retries_left > 0
                 && matches!(
                     result,
@@ -343,7 +347,7 @@ async fn worker_loop(
                     retries_left - 1,
                 );
                 queue.lock().await.push_front((item, retries_left - 1));
-                if isolation == IsolationMode::Test {
+                if item_isolation == IsolationMode::Test {
                     if !try_respawn(&mut worker, &cfg, id, &ev_tx).await {
                         return;
                     }
@@ -372,7 +376,7 @@ async fn worker_loop(
         // worker via try_respawn drops the previous instance and Godot
         // exits. We don't bother sending Shutdown first: the kill is
         // immediate and the test result has already been emitted.
-        if isolation == IsolationMode::Test {
+        if item.isolation == IsolationMode::Test {
             if !try_respawn(&mut worker, &cfg, id, &ev_tx).await {
                 return;
             }

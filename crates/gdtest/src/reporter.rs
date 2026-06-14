@@ -433,12 +433,17 @@ enum JsonSink {
     /// Each event is written to its own numbered file (`<dir>/NNNNNNNN.json`).
     /// The file is created, written, and closed before Godot ever sees it in
     /// the directory listing, so there are zero Windows file-sharing conflicts.
-    Dir { path: std::path::PathBuf, seq: u32 },
+    Dir {
+        path: std::path::PathBuf,
+        seq: u32,
+    },
 }
 
 impl Default for JsonReporter {
     fn default() -> Self {
-        Self { sink: JsonSink::Stdout }
+        Self {
+            sink: JsonSink::Stdout,
+        }
     }
 }
 
@@ -454,7 +459,12 @@ impl JsonReporter {
         } else {
             std::fs::create_dir_all(dir)?;
         }
-        Ok(Self { sink: JsonSink::Dir { path: dir.to_owned(), seq: 0 } })
+        Ok(Self {
+            sink: JsonSink::Dir {
+                path: dir.to_owned(),
+                seq: 0,
+            },
+        })
     }
 
     fn write_line(&mut self, line: &str) {

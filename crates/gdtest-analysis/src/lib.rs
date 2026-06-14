@@ -173,6 +173,13 @@ pub enum TestKind {
     Bench,
 }
 
+/// Per-test isolation override discovered from source comments.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IsolationDirective {
+    File,
+    Test,
+}
+
 /// A discovered test function with its run classification.
 #[derive(Debug, Clone)]
 pub struct TestEntry {
@@ -180,6 +187,8 @@ pub struct TestEntry {
     pub kind: TestKind,
     /// Tags collected from `## @tag <name>` doc comments immediately preceding the function.
     pub tags: Vec<String>,
+    /// Isolation override from source comments.
+    pub isolation: Option<IsolationDirective>,
 }
 
 /// Return every `func test_*()` and `func bench_*()` in the given GDScript file, in source order.
@@ -207,7 +216,13 @@ pub fn list_test_entries_in_source(source: &[u8]) -> Result<Vec<TestEntry>> {
     let Some(tree) = parser.parse(source, None) else {
         return Ok(Vec::new());
     };
-    Ok(collect_test_entries(tree.root_node(), source, None))
+    let file_isolation = extract_file_isolation(source);
+    Ok(collect_test_entries(
+        tree.root_node(),
+        source,
+        None,
+        file_isolation,
+    ))
 }
 
 /// Parse a `## @tag <name>` doc comment. Returns the tag name or `None`.
@@ -218,6 +233,39 @@ fn parse_tag_comment(text: &str) -> Option<String> {
         return None;
     }
     Some(name.to_string())
+}
+
+fn parse_isolation_comment(text: &str) -> Option<IsolationDirective> {
+    let trimmed = text.trim();
+    let doc_body = trimmed.strip_prefix("##").map(str::trim_start);
+    let plain_body = trimmed.strip_prefix('#').map(str::trim_start);
+
+    if let Some(body) = doc_body {
+        if let Some(value) = body.strip_prefix("@isolation").map(str::trim) {
+            return match value {
+                "file" => Some(IsolationDirective::File),
+                "test" => Some(IsolationDirective::Test),
+                _ => None,
+            };
+        }
+    }
+
+    if let Some(body) = plain_body {
+        if let Some(value) = body
+            .strip_prefix("gdtest:")
+            .map(str::trim_start)
+            .and_then(|rest| rest.strip_prefix("isolation="))
+            .map(str::trim)
+        {
+            return match value {
+                "file" => Some(IsolationDirective::File),
+                "test" => Some(IsolationDirective::Test),
+                _ => None,
+            };
+        }
+    }
+
+    None
 }
 
 /// Scan source lines immediately before `func_row` and collect `## @tag` names.
@@ -244,6 +292,43 @@ fn extract_tags_preceding(source: &[u8], func_row: usize) -> Vec<String> {
     tags
 }
 
+fn extract_isolation_preceding(source: &[u8], func_row: usize) -> Option<IsolationDirective> {
+    let lines: Vec<&[u8]> = source.split(|&b| b == b'\n').collect();
+    let mut row = func_row;
+    while row > 0 {
+        row -= 1;
+        let line = std::str::from_utf8(lines[row]).unwrap_or("").trim();
+        if line.is_empty() {
+            break;
+        }
+        if let Some(isolation) = parse_isolation_comment(line) {
+            return Some(isolation);
+        }
+        if line.starts_with('#') {
+            continue;
+        }
+        break;
+    }
+    None
+}
+
+fn extract_file_isolation(source: &[u8]) -> Option<IsolationDirective> {
+    for raw_line in source.split(|&b| b == b'\n') {
+        let line = std::str::from_utf8(raw_line).unwrap_or("").trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Some(isolation) = parse_isolation_comment(line) {
+            return Some(isolation);
+        }
+        if line.starts_with('#') {
+            continue;
+        }
+        break;
+    }
+    None
+}
+
 /// Classify a function name into its TestKind, or `None` if it's not a test.
 fn classify_func(name: &str) -> Option<TestKind> {
     if name.starts_with("bench_") {
@@ -261,6 +346,7 @@ fn collect_test_entries<'a>(
     node: tree_sitter::Node<'a>,
     source: &[u8],
     describe: Option<&str>,
+    file_isolation: Option<IsolationDirective>,
 ) -> Vec<TestEntry> {
     let mut out = Vec::new();
     for i in 0..node.child_count() {
@@ -277,7 +363,15 @@ fn collect_test_entries<'a>(
                                 None => fname.to_string(),
                             };
                             let tags = extract_tags_preceding(source, child.start_position().row);
-                            out.push(TestEntry { name, kind, tags });
+                            let isolation =
+                                extract_isolation_preceding(source, child.start_position().row)
+                                    .or(file_isolation);
+                            out.push(TestEntry {
+                                name,
+                                kind,
+                                tags,
+                                isolation,
+                            });
                         }
                     }
                 }
@@ -288,14 +382,24 @@ fn collect_test_entries<'a>(
                 if let Some(name_node) = child.child_by_field_name("name") {
                     if let Ok(cname) = name_node.utf8_text(source) {
                         if cname.starts_with("describe_") {
-                            out.extend(collect_test_entries(child, source, Some(cname)));
+                            out.extend(collect_test_entries(
+                                child,
+                                source,
+                                Some(cname),
+                                file_isolation,
+                            ));
                         }
                         // Non-describe inner classes are ignored entirely.
                     }
                 }
             }
             _ => {
-                out.extend(collect_test_entries(child, source, describe));
+                out.extend(collect_test_entries(
+                    child,
+                    source,
+                    describe,
+                    file_isolation,
+                ));
             }
         }
     }
@@ -409,6 +513,43 @@ func test_also_untagged() -> void:
         assert_eq!(entries[0].tags, vec!["slow", "integration"]);
         assert!(entries[1].tags.is_empty());
         assert!(entries[2].tags.is_empty());
+    }
+
+    #[test]
+    fn parses_file_header_isolation_directive() {
+        let src = br#"
+# gdtest: isolation=test
+extends GdTest
+
+func test_one() -> void:
+    pass
+
+func test_two() -> void:
+    pass
+"#;
+        let entries = list_test_entries_in_source(src).unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].isolation, Some(IsolationDirective::Test));
+        assert_eq!(entries[1].isolation, Some(IsolationDirective::Test));
+    }
+
+    #[test]
+    fn function_isolation_overrides_file_header() {
+        let src = br#"
+## @isolation test
+extends GdTest
+
+## @isolation file
+func test_one() -> void:
+    pass
+
+func test_two() -> void:
+    pass
+"#;
+        let entries = list_test_entries_in_source(src).unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].isolation, Some(IsolationDirective::File));
+        assert_eq!(entries[1].isolation, Some(IsolationDirective::Test));
     }
 
     #[test]

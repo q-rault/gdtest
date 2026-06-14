@@ -457,6 +457,17 @@ fn emit_list(items: &[pool::TestItem], rkind: reporter::ReporterKind) -> anyhow:
     Ok(())
 }
 
+fn effective_isolation(
+    default: pool::IsolationMode,
+    override_directive: Option<gdtest_analysis::IsolationDirective>,
+) -> pool::IsolationMode {
+    match override_directive {
+        Some(gdtest_analysis::IsolationDirective::File) => pool::IsolationMode::File,
+        Some(gdtest_analysis::IsolationDirective::Test) => pool::IsolationMode::Test,
+        None => default,
+    }
+}
+
 fn run_watch(
     targets: Vec<String>,
     filter: Option<String>,
@@ -477,7 +488,7 @@ fn run_watch(
     for t in &targets {
         if let Some((script, func)) = t.split_once("::") {
             let s = normalize_res(script, &project_abs)?;
-            explicit_tests.push(pool::TestItem::new(s, func.to_string()));
+            explicit_tests.push(pool::TestItem::new(s, func.to_string(), isolation));
         } else {
             file_targets.push(t.clone());
         }
@@ -633,7 +644,7 @@ async fn run_pool(
     for t in &targets {
         if let Some((script, func)) = t.split_once("::") {
             let s = normalize_res(script, &project_abs)?;
-            explicit_tests.push(pool::TestItem::new(s, func.to_string()));
+            explicit_tests.push(pool::TestItem::new(s, func.to_string(), isolation));
         } else {
             file_targets.push(t.clone());
         }
@@ -701,10 +712,12 @@ async fn run_pool(
             .cloned()
             .unwrap_or_else(|| file.clone());
         for e in entries {
+            let item_isolation = effective_isolation(isolation, e.isolation);
             let item = pool::TestItem {
                 script: script.clone(),
                 func: e.name,
                 display_script: file.clone(),
+                isolation: item_isolation,
             };
             match e.kind {
                 gdtest_analysis::TestKind::Bench => {
@@ -1129,7 +1142,7 @@ async fn run_mutate(
     for t in &targets {
         if let Some((script, func)) = t.split_once("::") {
             let s = normalize_res(script, &project_abs)?;
-            items.push(pool::TestItem::new(s, func.to_string()));
+            items.push(pool::TestItem::new(s, func.to_string(), isolation));
         } else {
             file_targets.push(t.clone());
         }
@@ -1141,10 +1154,12 @@ async fn run_mutate(
         let entries = gdtest_analysis::list_test_entries_in(&abs).unwrap_or_default();
         for e in entries {
             if e.kind == gdtest_analysis::TestKind::Normal {
+                let item_isolation = effective_isolation(isolation, e.isolation);
                 items.push(pool::TestItem {
                     script: file.clone(),
                     func: e.name,
                     display_script: file.clone(),
+                    isolation: item_isolation,
                 });
             }
         }

@@ -49,7 +49,6 @@ fn choose_candidate(
     probed: Vec<ProbedCandidate>,
     hint: Option<VersionHint>,
 ) -> Result<DiscoveryResult> {
-
     let mut best_compatible: Option<(i64, ProbedCandidate)> = None;
     let mut best_unprobed: Option<Candidate> = None;
     let mut incompatible_versions = Vec::new();
@@ -124,7 +123,12 @@ fn discovery_failure_message(incompatible_versions: Vec<(String, Version)>) -> S
     if !incompatible_versions.is_empty() {
         let found = incompatible_versions
             .into_iter()
-            .map(|(path, version)| format!("{path} ({}.{}.{})", version.major, version.minor, version.patch))
+            .map(|(path, version)| {
+                format!(
+                    "{path} ({}.{}.{})",
+                    version.major, version.minor, version.patch
+                )
+            })
             .collect::<Vec<_>>()
             .join(", ");
         msg.push_str(&format!("\nFound incompatible candidates: {found}"));
@@ -182,9 +186,17 @@ fn common_location_roots() -> Vec<PathBuf> {
     }
     #[cfg(target_os = "macos")]
     {
-        roots.push(PathBuf::from("/Applications/Godot.app/Contents/MacOS/Godot"));
+        roots.push(PathBuf::from(
+            "/Applications/Godot.app/Contents/MacOS/Godot",
+        ));
         if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
-            roots.push(home.join("Applications").join("Godot.app").join("Contents").join("MacOS").join("Godot"));
+            roots.push(
+                home.join("Applications")
+                    .join("Godot.app")
+                    .join("Contents")
+                    .join("MacOS")
+                    .join("Godot"),
+            );
         }
     }
     #[cfg(all(unix, not(target_os = "macos")))]
@@ -342,11 +354,11 @@ fn compatibility_score(version: Version, hint: Option<VersionHint>) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        choose_candidate, compatibility_score, parse_version_output, project_version_hint, Candidate,
-        ProbedCandidate, Version, VersionHint,
+        choose_candidate, compatibility_score, parse_version_output, project_version_hint,
+        Candidate, ProbedCandidate, Version, VersionHint,
     };
-    use std::fs;
     use std::ffi::OsString;
+    use std::fs;
 
     #[test]
     fn parses_project_version_hint() {

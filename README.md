@@ -98,7 +98,7 @@ Common flags:
 | `--tag <TAG>` | - | Include tagged tests |
 | `--exclude-tag <TAG>` | from config | Exclude tagged tests |
 | `--list` | off | Print discovered tests and exit |
-| `--isolation file\|test` | `file` | Reuse worker per file or respawn per test |
+| `--isolation file\|test` | `file` | Reuse workers across tests or respawn per test |
 | `--timeout <MS>` | `5000` | Mark silent tests as errors |
 | `--timeout-warn <MS>` | off | Warn on slow tests without failing them |
 | `--retries <N>` | `0` | Retry failing tests |
@@ -120,6 +120,25 @@ gdtest aggregate shard-*.xml --output combined.xml
 gdtest migrate gut test/ --out .gdtest_rewrite/gut
 gdtest migrate gdunit4 test/ --out .gdtest_rewrite/gdunit4
 ```
+
+Isolation directives can also be declared in comments, so only the tests that
+need a fresh Godot process pay the cost:
+
+```gdscript
+# File-wide default for every test in this file:
+# gdtest: isolation=test
+
+## @isolation test
+func test_needs_fresh_autoloads() -> void:
+    pass
+
+## @isolation file
+func test_can_share_worker() -> void:
+    pass
+```
+
+Function-level directives override the file header. They only affect gdtest's
+worker recycling; separate `-j` workers are already separate Godot processes.
 
 ## Assertion API
 
