@@ -106,7 +106,11 @@ func simulate_mouse_button_released(button: MouseButton, position: Vector2 = Vec
 # Requires --display-mode windowed; skip tests calling this in headless runs.
 func simulate_click_control(control: Control) -> void:
 	var vp := control.get_viewport()
-	var center := control.get_global_rect().get_center()
+	# get_global_transform_with_canvas() maps from the control's LOCAL space to
+	# viewport space, including any CanvasLayer transform. The center in local
+	# space is size/2. Using get_global_rect().get_center() is wrong for controls
+	# inside a CanvasLayer because it double-counts the control's own position.
+	var center := control.get_global_transform_with_canvas() * (control.size / 2.0)
 
 	var motion := InputEventMouseMotion.new()
 	motion.position = center
