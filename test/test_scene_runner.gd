@@ -73,3 +73,18 @@ func test_simulate_mouse_move_does_not_crash() -> void:
 	var runner := scene_runner(packed)
 	runner.simulate_mouse_move(Vector2(50, 75))
 	assert_true(true, "no crash on mouse move simulation")
+
+# ── GUI click ─────────────────────────────────────────────────────────────────
+
+func test_simulate_click_control_fires_pressed() -> void:
+	if OS.has_feature("headless"):
+		skip("simulate_click_control requires --display-mode windowed")
+		return
+	var packed: PackedScene = load("res://test/support/button_scene.tscn")
+	var runner := scene_runner(packed)
+	var button: Button = runner.scene.get_node("Button")
+	var s := {"pressed": false}
+	button.pressed.connect(func(): s.pressed = true)
+	await runner.simulate_frames(3)
+	await runner.simulate_click_control(button)
+	assert_true(s.pressed, "simulate_click_control doit déclencher Button.pressed")

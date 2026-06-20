@@ -99,3 +99,34 @@ func simulate_mouse_button_released(button: MouseButton, position: Vector2 = Vec
 	ev.position = position
 	ev.global_position = position
 	Input.parse_input_event(ev)
+
+# Simulates a full left-click on a GUI Control (hover → press → release).
+# Uses viewport-local coordinates from get_global_rect() and push_input() with
+# in_local_coords=true, which is required for correct routing in windowed mode.
+# Requires --display-mode windowed; skip tests calling this in headless runs.
+func simulate_click_control(control: Control) -> void:
+	var vp := control.get_viewport()
+	var center := control.get_global_rect().get_center()
+
+	var motion := InputEventMouseMotion.new()
+	motion.position = center
+	motion.global_position = center
+	vp.push_input(motion, true)
+
+	await Engine.get_main_loop().process_frame
+
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	press.position = center
+	press.global_position = center
+	vp.push_input(press, true)
+
+	var release := InputEventMouseButton.new()
+	release.button_index = MOUSE_BUTTON_LEFT
+	release.pressed = false
+	release.position = center
+	release.global_position = center
+	vp.push_input(release, true)
+
+	await Engine.get_main_loop().process_frame
