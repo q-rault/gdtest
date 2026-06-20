@@ -12,11 +12,19 @@ use tokio::sync::mpsc;
 
 use crate::protocol::{Command, Event, GDTEST_OUT_PREFIX};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DisplayMode {
+    Headless,
+    Windowed,
+}
+
 #[derive(Clone)]
 pub struct Config {
     pub godot_exe: String,
     pub project_path: String,
     pub harness: String,
+    pub display_mode: DisplayMode,
     pub update_snapshots: bool,
     pub seed: Option<u64>,
     /// `res://` paths of plugin scripts to load in the worker (internal).
@@ -57,9 +65,7 @@ impl Worker {
         let stderr_stdio = Stdio::piped();
 
         let mut cmd = TokioCommand::new(&cfg.godot_exe);
-        cmd.arg("--headless")
-            .arg("--path")
-            .arg(&cfg.project_path)
+        cmd.args(base_args(cfg))
             .current_dir(&cfg.project_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -194,6 +200,18 @@ impl Worker {
     }
 }
 
+fn base_args(cfg: &Config) -> Vec<String> {
+    let mut args = Vec::new();
+    if cfg.display_mode == DisplayMode::Headless {
+        args.push("--headless".to_string());
+    }
+    args.push("--path".to_string());
+    args.push(cfg.project_path.clone());
+    args.push("-s".to_string());
+    args.push(cfg.harness.clone());
+    args
+}
+
 /// On Unix, open a PTY pair and return (slave as Stdio, stderr line receiver).
 ///
 /// Godot inherits the slave fd as its stderr. Because the slave is a real
@@ -250,4 +268,42 @@ fn pty_stderr() -> Result<(Stdio, mpsc::UnboundedReceiver<String>)> {
     });
 
     Ok((slave_stdio, rx))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{base_args, Config, DisplayMode};
+
+    fn test_config(display_mode: DisplayMode) -> Config {
+        Config {
+            godot_exe: "godot".to_string(),
+            project_path: ".".to_string(),
+            harness: "addons/gdtest/gdtest_worker.gd".to_string(),
+            display_mode,
+            update_snapshots: false,
+            seed: None,
+            plugins: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn headless_mode_includes_headless_flag() {
+        let args = base_args(&test_config(DisplayMode::Headless));
+        assert_eq!(
+            args,
+            vec![
+                "--headless",
+                "--path",
+                ".",
+                "-s",
+                "addons/gdtest/gdtest_worker.gd"
+            ]
+        );
+    }
+
+    #[test]
+    fn windowed_mode_omits_headless_flag() {
+        let args = base_args(&test_config(DisplayMode::Windowed));
+        assert_eq!(args, vec!["--path", ".", "-s", "addons/gdtest/gdtest_worker.gd"]);
+    }
 }

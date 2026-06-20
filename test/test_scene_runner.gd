@@ -73,4 +73,3 @@ func test_simulate_mouse_move_does_not_crash() -> void:
 	var runner := scene_runner(packed)
 	runner.simulate_mouse_move(Vector2(50, 75))
 	assert_true(true, "no crash on mouse move simulation")
-

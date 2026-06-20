@@ -18,6 +18,7 @@ use serde::Deserialize;
 pub struct GdtestConfig {
     pub godot_exe: Option<String>,
     pub jobs: Option<usize>,
+    pub display_mode: Option<String>,
     /// "pretty" | "tap" | "json" | "junit"
     pub reporter: Option<String>,
     /// "file" | "test"
@@ -55,6 +56,7 @@ pub struct GdtestConfig {
 #[serde(deny_unknown_fields)]
 pub struct ProfileConfig {
     pub jobs: Option<usize>,
+    pub display_mode: Option<String>,
     pub reporter: Option<String>,
     pub isolation: Option<String>,
     pub timeout: Option<u64>,
@@ -84,6 +86,7 @@ impl GdtestConfig {
             };
         }
         overlay!(jobs);
+        overlay!(display_mode);
         overlay!(reporter);
         overlay!(isolation);
         overlay!(timeout);
@@ -173,6 +176,7 @@ pub fn apply_env_defaults() -> anyhow::Result<()> {
     }
 
     set_if_absent("GODOT_EXE", cfg.godot_exe);
+    set_if_absent("GDTEST_DISPLAY_MODE", cfg.display_mode);
     set_if_absent("GDTEST_REPORTER", cfg.reporter);
     set_if_absent("GDTEST_ISOLATION", cfg.isolation);
     set_if_absent("GDTEST_TIMEOUT", cfg.timeout.map(|t| t.to_string()));
@@ -221,5 +225,31 @@ pub fn load_patterns(project_path: &str) -> Vec<String> {
             .collect()
     } else {
         cfg.patterns
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::{GdtestConfig, ProfileConfig};
+
+    #[test]
+    fn apply_profile_overlays_display_mode() {
+        let mut cfg = GdtestConfig {
+            display_mode: Some("headless".to_string()),
+            profile: HashMap::from([(
+                "gui".to_string(),
+                ProfileConfig {
+                    display_mode: Some("windowed".to_string()),
+                    ..ProfileConfig::default()
+                },
+            )]),
+            ..GdtestConfig::default()
+        };
+
+        cfg.apply_profile("gui").unwrap();
+
+        assert_eq!(cfg.display_mode.as_deref(), Some("windowed"));
     }
 }

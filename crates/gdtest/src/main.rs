@@ -193,6 +193,15 @@ struct WorkerArgs {
     #[arg(long, env = "GODOT_EXE", global = true)]
     godot_exe: Option<String>,
 
+    #[arg(
+        long,
+        value_enum,
+        env = "GDTEST_DISPLAY_MODE",
+        default_value = "headless",
+        global = true
+    )]
+    display_mode: worker::DisplayMode,
+
     #[arg(long, default_value = ".", global = true)]
     project_path: String,
 
@@ -603,6 +612,7 @@ fn cfg_or_die(cli: &Cli) -> anyhow::Result<worker::Config> {
         godot_exe,
         project_path: cli.worker.project_path.clone(),
         harness: cli.worker.harness.clone(),
+        display_mode: cli.worker.display_mode,
         update_snapshots: cli.update_snapshots,
         seed: cli.seed,
         plugins,

@@ -94,6 +94,7 @@ Common flags:
 | --- | --- | --- |
 | `-j, --jobs <N>` | CPU count | Parallel worker count |
 | `--reporter pretty\|tap\|json\|junit` | `pretty` | Output format |
+| `--display-mode headless\|windowed` | `headless` | Spawn Godot without `--headless` for real GUI tests |
 | `--filter <REGEX>` | - | Match on `file :: func` |
 | `--tag <TAG>` | - | Include tagged tests |
 | `--exclude-tag <TAG>` | from config | Exclude tagged tests |
@@ -235,6 +236,7 @@ Example:
 
 ```toml
 harness = "addons/gdtest/gdtest_worker.gd"
+display_mode = "headless"
 patterns = ["test/test_*.gd", "test/docs/**/test_*.gd"]
 exclude_tags = ["harness-meta", "isolation-specific"]
 coverage_exclude = ["addons/**", "test/**"]
