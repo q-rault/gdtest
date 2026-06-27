@@ -166,6 +166,9 @@ fn collect_candidates() -> Result<Vec<Candidate>> {
 }
 
 fn common_command_names() -> Vec<&'static str> {
+    #[cfg(not(windows))]
+    let names = vec!["godot", "godot4"];
+    #[cfg(windows)]
     let mut names = vec!["godot", "godot4"];
     #[cfg(windows)]
     {
