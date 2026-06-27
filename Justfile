@@ -106,7 +106,7 @@ release NEW_VER:
     just check-version-sync
     cargo test --workspace --quiet
     git add Cargo.toml Cargo.lock vscode-gdtest/package.json vscode-gdtest/package-lock.json zed-gdtest/extension.toml addons/gdtest_editor/plugin.cfg Justfile PUBLISHING.md scripts/release.py
-    git commit -m "release: v{{ NEW_VER }}"
+    git diff --cached --quiet; if ($LASTEXITCODE -eq 0) { Write-Output "release: no version file changes to commit; continuing" } else { git commit -m "release: v{{ NEW_VER }}" }
     git tag "v{{ NEW_VER }}"
     git push origin main
     git push origin "v{{ NEW_VER }}"
