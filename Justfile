@@ -113,6 +113,5 @@ release NEW_VER:
 
 retag-release NEW_VER:
     just check-release-version "{{ NEW_VER }}"
-    git fetch origin "refs/tags/v{{ NEW_VER }}:refs/tags/v{{ NEW_VER }}-remote" 2>$null; if ($LASTEXITCODE -ne 0) { $LASTEXITCODE = 0 }
     git tag -f "v{{ NEW_VER }}"
-    $remoteRef = "refs/tags/v{{ NEW_VER }}-remote"; $lease = git rev-parse --verify $remoteRef 2>$null; if ($LASTEXITCODE -eq 0) { git update-ref -d $remoteRef; git push origin "--force-with-lease=refs/tags/v{{ NEW_VER }}:$lease" "refs/tags/v{{ NEW_VER }}:refs/tags/v{{ NEW_VER }}" } else { git push origin "refs/tags/v{{ NEW_VER }}:refs/tags/v{{ NEW_VER }}" }
+    git push origin --force "refs/tags/v{{ NEW_VER }}:refs/tags/v{{ NEW_VER }}"
