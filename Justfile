@@ -1,4 +1,4 @@
-set dotenv-load := true
+set dotenv-load
 set windows-shell := ["powershell.exe", "-NoLogo", "-NoProfile", "-Command"]
 
 # Run everything: Rust unit tests, GDScript self-tests, CLI integration tests, docs examples.
@@ -44,15 +44,15 @@ ci: test bench
 # Directory (--source rewrites files in place; use git to revert):
 #   just transpile --source gut     test/cases/                           # migrate GUT dir -> GdTest
 #   just transpile --source gdunit4 --check test/cases/                   # dry-run, exit 1 if diff
-#   just transpile --target gut     --output-dir /tmp/gut test/cases/     # GdTest dir -> GUT
+# just transpile --target gut     --output-dir /tmp/gut test/cases/     # GdTest dir -> GUT
 transpile *ARGS:
-    PYTHONUTF8=1 python benchmarks/transpile.py {{ARGS}}
+    PYTHONUTF8=1 python benchmarks/transpile.py {{ ARGS }}
 
 # Benchmark your own project's test suite against GUT and gdUnit4.
 # Set GODOT_PROJECT_PATH and MANIFEST before running.
 # Manifest format: one "path/to/test.gd [file|test]" line per file; isolation defaults to file.
 # Example:
-#   GODOT_PROJECT_PATH=~/my-game MANIFEST=~/my-game/bench.manifest just bench-project
+# GODOT_PROJECT_PATH=~/my-game MANIFEST=~/my-game/bench.manifest just bench-project
 bench-project:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -89,7 +89,7 @@ check-clean-git:
     python scripts/release.py check-clean-git
 
 check-release-version NEW_VER:
-    python scripts/release.py check-release-version {{NEW_VER}}
+    python scripts/release.py check-release-version {{ NEW_VER }}
 
 check-version-sync:
     python scripts/release.py check-version-sync
@@ -97,21 +97,21 @@ check-version-sync:
 # Bump version across all manifests.
 # Usage: just bump 0.2.0
 bump NEW_VER:
-    python scripts/release.py bump {{NEW_VER}}
+    python scripts/release.py bump {{ NEW_VER }}
 
 release NEW_VER:
     just check-clean-git
-    just check-release-version "{{NEW_VER}}"
-    just bump "{{NEW_VER}}"
+    just check-release-version "{{ NEW_VER }}"
+    just bump "{{ NEW_VER }}"
     just check-version-sync
     cargo test --workspace --quiet
     git add Cargo.toml Cargo.lock vscode-gdtest/package.json vscode-gdtest/package-lock.json zed-gdtest/extension.toml addons/gdtest_editor/plugin.cfg Justfile PUBLISHING.md scripts/release.py
-    git commit -m "release: v{{NEW_VER}}"
-    git tag "v{{NEW_VER}}"
+    git commit -m "release: v{{ NEW_VER }}"
+    git tag "v{{ NEW_VER }}"
     git push origin main
-    git push origin "v{{NEW_VER}}"
+    git push origin "v{{ NEW_VER }}"
 
 retag-release NEW_VER:
-    just check-release-version "{{NEW_VER}}"
-    git tag -f "v{{NEW_VER}}"
-    git push origin -f "v{{NEW_VER}}"
+    just check-release-version "{{ NEW_VER }}"
+    git tag -f "v{{ NEW_VER }}"
+    git push origin --force-with-lease "v{{ NEW_VER }}"
