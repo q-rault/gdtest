@@ -1,8 +1,7 @@
 //! `gdtest.toml` — persistent config file (internal).
 //!
 //! Searched upward from the project root (like Cargo.toml). CLI flags and
-//! existing env vars always win; config values are injected as env vars
-//! before clap parses, so the priority is:
+//! existing env vars always win. The effective priority is:
 //!
 //!   CLI flag > environment variable > gdtest.toml > built-in default
 
@@ -138,66 +137,18 @@ fn load(project_path: &Path) -> anyhow::Result<Option<GdtestConfig>> {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-fn pre_parse_str_arg(flag: &str) -> Option<String> {
-    let args: Vec<String> = std::env::args().collect();
-    let eq_prefix = format!("{flag}=");
-    let mut i = 1;
-    while i < args.len() {
-        if args[i] == flag && i + 1 < args.len() {
-            return Some(args[i + 1].clone());
-        }
-        if let Some(val) = args[i].strip_prefix(&eq_prefix) {
-            return Some(val.to_string());
-        }
-        i += 1;
-    }
-    None
-}
-
-fn set_if_absent(key: &str, val: Option<String>) {
-    if let Some(v) = val {
-        if std::env::var(key).is_err() {
-            std::env::set_var(key, v);
-        }
-    }
-}
-
-/// Load `gdtest.toml` and inject config values as env vars before clap parses.
-/// CLI flags and pre-existing env vars always win (env vars are only set when absent).
-pub fn apply_env_defaults() -> anyhow::Result<()> {
-    let project_path = pre_parse_str_arg("--project-path").unwrap_or_else(|| ".".to_string());
-    let profile = pre_parse_str_arg("--profile");
-
-    let Some(mut cfg) = load(Path::new(&project_path))? else {
-        return Ok(());
+/// Load `gdtest.toml` and apply the requested profile, if any.
+pub fn load_resolved(
+    project_path: &str,
+    profile: Option<&str>,
+) -> anyhow::Result<Option<GdtestConfig>> {
+    let Some(mut cfg) = load(Path::new(project_path))? else {
+        return Ok(None);
     };
     if let Some(name) = profile {
-        cfg.apply_profile(&name)?;
+        cfg.apply_profile(name)?;
     }
-
-    set_if_absent("GODOT_EXE", cfg.godot_exe);
-    set_if_absent("GDTEST_DISPLAY_MODE", cfg.display_mode);
-    set_if_absent("GDTEST_REPORTER", cfg.reporter);
-    set_if_absent("GDTEST_ISOLATION", cfg.isolation);
-    set_if_absent("GDTEST_TIMEOUT", cfg.timeout.map(|t| t.to_string()));
-    set_if_absent(
-        "GDTEST_TIMEOUT_WARN",
-        cfg.timeout_warn.map(|t| t.to_string()),
-    );
-    set_if_absent("GDTEST_FAIL_FAST", cfg.fail_fast.map(|f| f.to_string()));
-    set_if_absent("GDTEST_RETRIES", cfg.retries.map(|r| r.to_string()));
-    set_if_absent("GDTEST_HARNESS", cfg.harness);
-    set_if_absent("GDTEST_JOBS", cfg.jobs.map(|j| j.to_string()));
-    if !cfg.include_tags.is_empty() && std::env::var("GDTEST_INCLUDE_TAGS").is_err() {
-        std::env::set_var("GDTEST_INCLUDE_TAGS", cfg.include_tags.join(","));
-    }
-    if !cfg.exclude_tags.is_empty() && std::env::var("GDTEST_EXCLUDE_TAGS").is_err() {
-        std::env::set_var("GDTEST_EXCLUDE_TAGS", cfg.exclude_tags.join(","));
-    }
-    if !cfg.coverage_exclude.is_empty() && std::env::var("GDTEST_COVERAGE_EXCLUDE").is_err() {
-        std::env::set_var("GDTEST_COVERAGE_EXCLUDE", cfg.coverage_exclude.join(","));
-    }
-    Ok(())
+    Ok(Some(cfg))
 }
 
 /// Return the `plugins` list from `gdtest.toml`, if any. Returns an empty Vec

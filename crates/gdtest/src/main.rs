@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context as _;
-use clap::{Parser, Subcommand};
+use clap::parser::ValueSource;
+use clap::{ArgMatches, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use serde::Serialize;
 
 mod aggregate;
@@ -285,9 +286,7 @@ fn main() -> anyhow::Result<()> {
     // Load .env from cwd (silently ignore if absent).
     // Priority: CLI flag > env var > .env > gdtest.toml > built-in default.
     dotenvy::dotenv().ok();
-    config::apply_env_defaults()?;
-
-    let cli = Cli::parse();
+    let cli = parse_cli()?;
 
     match &cli.command {
         Some(Subcmd::Init { editor, force }) => {
@@ -436,6 +435,99 @@ fn main() -> anyhow::Result<()> {
         cli.changed_since,
         cli.output_dir,
     )
+}
+
+fn parse_cli() -> anyhow::Result<Cli> {
+    let matches = Cli::command().get_matches();
+    let mut cli = Cli::from_arg_matches(&matches)?;
+    apply_config_defaults(&mut cli, &matches)?;
+    Ok(cli)
+}
+
+fn apply_config_defaults(cli: &mut Cli, matches: &ArgMatches) -> anyhow::Result<()> {
+    let Some(cfg) = config::load_resolved(&cli.worker.project_path, cli.profile.as_deref())? else {
+        return Ok(());
+    };
+    apply_config_defaults_from_data(cli, matches, cfg)
+}
+
+fn apply_config_defaults_from_data(
+    cli: &mut Cli,
+    matches: &ArgMatches,
+    cfg: config::GdtestConfig,
+) -> anyhow::Result<()> {
+    if can_apply_config(matches, "godot_exe") {
+        if let Some(v) = cfg.godot_exe {
+            cli.worker.godot_exe = Some(v);
+        }
+    }
+    if can_apply_config(matches, "jobs") {
+        if let Some(v) = cfg.jobs {
+            cli.jobs = Some(v);
+        }
+    }
+    if can_apply_config(matches, "display_mode") {
+        if let Some(v) = cfg.display_mode {
+            cli.worker.display_mode = parse_value_enum("display_mode", &v)?;
+        }
+    }
+    if can_apply_config(matches, "reporter") {
+        if let Some(v) = cfg.reporter {
+            cli.reporter = Some(parse_value_enum("reporter", &v)?);
+        }
+    }
+    if can_apply_config(matches, "isolation") {
+        if let Some(v) = cfg.isolation {
+            cli.isolation = Some(parse_value_enum("isolation", &v)?);
+        }
+    }
+    if can_apply_config(matches, "timeout") {
+        if let Some(v) = cfg.timeout {
+            cli.timeout = Some(v);
+        }
+    }
+    if can_apply_config(matches, "timeout_warn") {
+        if let Some(v) = cfg.timeout_warn {
+            cli.timeout_warn = Some(v);
+        }
+    }
+    if can_apply_config(matches, "fail_fast") {
+        if let Some(v) = cfg.fail_fast {
+            cli.fail_fast = v;
+        }
+    }
+    if can_apply_config(matches, "retries") {
+        if let Some(v) = cfg.retries {
+            cli.retries = Some(v);
+        }
+    }
+    if can_apply_config(matches, "harness") {
+        if let Some(v) = cfg.harness {
+            cli.worker.harness = v;
+        }
+    }
+    if can_apply_config(matches, "tag") && !cfg.include_tags.is_empty() {
+        cli.tag = cfg.include_tags;
+    }
+    if can_apply_config(matches, "exclude_tag") && !cfg.exclude_tags.is_empty() {
+        cli.exclude_tag = cfg.exclude_tags;
+    }
+    if can_apply_config(matches, "coverage_exclude") && !cfg.coverage_exclude.is_empty() {
+        cli.coverage_exclude = cfg.coverage_exclude;
+    }
+    Ok(())
+}
+
+fn can_apply_config(matches: &ArgMatches, id: &str) -> bool {
+    matches
+        .value_source(id)
+        .is_none_or(|source| source == ValueSource::DefaultValue)
+}
+
+fn parse_value_enum<T: ValueEnum>(field: &str, value: &str) -> anyhow::Result<T> {
+    T::from_str(value, true).map_err(|_| anyhow::anyhow!(
+        "gdtest.toml: invalid `{field}` value `{value}`"
+    ))
 }
 
 #[derive(Serialize)]
@@ -1232,4 +1324,61 @@ fn normalize_res(path: &str, project_abs: &std::path::Path) -> anyhow::Result<St
         project_abs.join(p)
     };
     gdtest_analysis::to_res_path(&abs, project_abs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse_matches(args: &[&str]) -> (Cli, ArgMatches) {
+        let matches = Cli::command().try_get_matches_from(args).unwrap();
+        let cli = Cli::from_arg_matches(&matches).unwrap();
+        (cli, matches)
+    }
+
+    #[test]
+    fn gdtest_toml_overrides_clap_defaults() {
+        let (mut cli, matches) = parse_matches(&["gdtest"]);
+        let cfg = config::GdtestConfig {
+            jobs: Some(8),
+            display_mode: Some("windowed".to_string()),
+            fail_fast: Some(true),
+            harness: Some("res://custom_harness.gd".to_string()),
+            include_tags: vec!["fast".to_string()],
+            ..config::GdtestConfig::default()
+        };
+
+        apply_config_defaults_from_data(&mut cli, &matches, cfg).unwrap();
+
+        assert_eq!(cli.jobs, Some(8));
+        assert_eq!(cli.worker.display_mode, worker::DisplayMode::Windowed);
+        assert!(cli.fail_fast);
+        assert_eq!(cli.worker.harness, "res://custom_harness.gd");
+        assert_eq!(cli.tag, vec!["fast"]);
+    }
+
+    #[test]
+    fn cli_values_beat_gdtest_toml() {
+        let (mut cli, matches) = parse_matches(&[
+            "gdtest",
+            "--jobs",
+            "2",
+            "--display-mode",
+            "headless",
+            "--tag",
+            "smoke",
+        ]);
+        let cfg = config::GdtestConfig {
+            jobs: Some(8),
+            display_mode: Some("windowed".to_string()),
+            include_tags: vec!["fast".to_string()],
+            ..config::GdtestConfig::default()
+        };
+
+        apply_config_defaults_from_data(&mut cli, &matches, cfg).unwrap();
+
+        assert_eq!(cli.jobs, Some(2));
+        assert_eq!(cli.worker.display_mode, worker::DisplayMode::Headless);
+        assert_eq!(cli.tag, vec!["smoke"]);
+    }
 }
