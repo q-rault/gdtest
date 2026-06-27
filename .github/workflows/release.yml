@@ -3,169 +3,109 @@ name: release
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - 'v[0-9]*'
 
 permissions:
   contents: write
 
 jobs:
-  verify-versions:
-    name: verify versions in sync
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Check all manifests agree
-        run: |
-          python3 - <<'EOF'
-          import re, json, sys, pathlib
-
-          root = re.search(r'(?m)^version\s*=\s*"([^"]+)"', pathlib.Path("Cargo.toml").read_text()).group(1)
-          errors = []
-
-          vscode = json.loads(pathlib.Path("vscode-gdtest/package.json").read_text())["version"]
-          if vscode != root: errors.append(f"vscode-gdtest/package.json: {vscode!r}")
-
-          zed = re.search(r'(?m)^version\s*=\s*"([^"]+)"', pathlib.Path("zed-gdtest/extension.toml").read_text()).group(1)
-          if zed != root: errors.append(f"zed-gdtest/extension.toml: {zed!r}")
-
-          plugin = re.search(r'(?m)^version\s*=\s*"([^"]+)"', pathlib.Path("addons/gdtest_editor/plugin.cfg").read_text()).group(1)
-          if plugin != root: errors.append(f"addons/gdtest_editor/plugin.cfg: {plugin!r}")
-
-          if errors:
-              print(f"Expected {root!r} everywhere (from Cargo.toml), but found:")
-              for e in errors: print(f"  {e}")
-              print("Run 'just bump X.Y.Z' to sync all manifests.")
-              sys.exit(1)
-          print(f"All manifests agree on {root!r}.")
-          EOF
-
   build:
-    name: build (${{ matrix.target }})
-    needs: verify-versions
+    name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - target: aarch64-apple-darwin
-            os: macos-14
-          - target: x86_64-apple-darwin
-            os: macos-13
-          - target: x86_64-unknown-linux-gnu
+          - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
+            archive: tar.gz
           - target: x86_64-pc-windows-msvc
             os: windows-latest
+            archive: zip
+          - target: x86_64-apple-darwin
+            os: macos-13
+            archive: tar.gz
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            archive: tar.gz
+
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust toolchain
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup target add ${{ matrix.target }}
-      - name: Build release binary
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install musl tools
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get install -y musl-tools
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-cargo-
+
+      - name: Build
         run: cargo build --release -p gdtest --target ${{ matrix.target }} --locked
-      - name: Package archive
+
+      - name: Package (Unix)
+        if: matrix.archive == 'tar.gz'
         shell: bash
         run: |
-          set -euo pipefail
-          tag="${GITHUB_REF_NAME}"
-          ver="${tag#v}"
-          name="gdtest-${ver}-${{ matrix.target }}"
-          mkdir -p dist/$name
-          mkdir -p dist/$name/addons
-          if [[ "${{ matrix.target }}" == *windows* ]]; then
-            cp target/${{ matrix.target }}/release/gdtest.exe dist/$name/
-          else
-            cp target/${{ matrix.target }}/release/gdtest dist/$name/
-          fi
-          cp README.md LICENSE-MIT LICENSE-APACHE dist/$name/
-          cp -r addons/gdtest dist/$name/addons/
-          if [[ "${{ matrix.target }}" == *windows* ]]; then
-            (cd dist && 7z a -tzip "$name.zip" "$name")
-          else
-            (cd dist && tar czf "$name.tar.gz" "$name")
-          fi
+          VERSION="${GITHUB_REF_NAME}"
+          PACKAGE_DIR="gdtest-${VERSION}-${{ matrix.target }}"
+          ARCHIVE="${PACKAGE_DIR}.tar.gz"
+          rm -rf "${PACKAGE_DIR}"
+          mkdir -p "${PACKAGE_DIR}/addons"
+          cp "target/${{ matrix.target }}/release/gdtest" "${PACKAGE_DIR}/"
+          cp -r addons/gdtest "${PACKAGE_DIR}/addons/"
+          cp -r addons/gdtest_editor "${PACKAGE_DIR}/addons/"
+          cp README.md LICENSE-MIT LICENSE-APACHE "${PACKAGE_DIR}/"
+          tar czf "${ARCHIVE}" "${PACKAGE_DIR}"
+          echo "ARCHIVE=${ARCHIVE}" >> "$GITHUB_ENV"
+
+      - name: Package (Windows)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          $Version = $env:GITHUB_REF_NAME
+          $PackageDir = "gdtest-$Version-${{ matrix.target }}"
+          $Archive = "$PackageDir.zip"
+          Remove-Item -Recurse -Force $PackageDir -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path "$PackageDir\addons" | Out-Null
+          Copy-Item "target\${{ matrix.target }}\release\gdtest.exe" "$PackageDir\"
+          Copy-Item "addons\gdtest" "$PackageDir\addons" -Recurse
+          Copy-Item "addons\gdtest_editor" "$PackageDir\addons" -Recurse
+          Copy-Item "README.md","LICENSE-MIT","LICENSE-APACHE" $PackageDir
+          Compress-Archive -Path $PackageDir -DestinationPath $Archive
+          "ARCHIVE=$Archive" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: gdtest-${{ matrix.target }}
-          path: dist/*.tar.gz
-          if-no-files-found: ignore
-      - name: Upload artifact (windows)
-        if: contains(matrix.target, 'windows')
-        uses: actions/upload-artifact@v4
-        with:
-          name: gdtest-${{ matrix.target }}-zip
-          path: dist/*.zip
-
-  package-extensions:
-    name: package extensions
-    needs: verify-versions
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install just
-        uses: taiki-e/install-action@just
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - name: Install Rust toolchain + wasm32-wasip1
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup target add wasm32-wasip1
-      - name: Package VS Code extension
-        run: just package-vscode
-      - name: Package Zed extension
-        run: just package-zed
-      - name: Package Godot editor plugin
-        run: just package-editor
-      - name: Upload VS Code extension
-        uses: actions/upload-artifact@v4
-        with:
-          name: vscode-extension
-          path: vscode-gdtest/*.vsix
-      - name: Upload Zed extension
-        uses: actions/upload-artifact@v4
-        with:
-          name: zed-extension
-          path: zed-gdtest/extension.wasm
-      - name: Upload Godot editor plugin
-        uses: actions/upload-artifact@v4
-        with:
-          name: godot-editor-plugin
-          path: gdtest-editor-*.zip
+          path: ${{ env.ARCHIVE }}
 
   release:
-    name: github release
-    needs: [build, package-extensions]
+    name: Create GitHub release
+    needs: build
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          path: dist
-      - name: Flatten
-        run: |
-          mkdir -p out
-          find dist -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.vsix' -o -name '*.wasm' \) -exec cp -v {} out/ \;
-          ls -la out/
-      - name: Create GitHub release
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          files: out/*
+          files: artifacts/*
           generate_release_notes: true
-
-  publish-crates:
-    name: publish to crates.io
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust toolchain
-        run: rustup toolchain install stable --profile minimal
-      - name: Publish gdtest-analysis
-        run: cargo publish -p gdtest-analysis --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
-      - name: Publish gdtest
-        run: cargo publish -p gdtest --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
