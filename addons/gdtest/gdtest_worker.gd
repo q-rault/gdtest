@@ -16,7 +16,7 @@ extends SceneTree
 # Protocol reference: crates/gdtest/src/protocol.rs.
 
 const OUT_PREFIX := "GDTEST_OUT:"
-const HARNESS_VERSION := "0.1.0"
+const HARNESS_VERSION := "0.1.1"
 
 var _current_failures: Array[String] = []
 var _pending_msg: String = ""

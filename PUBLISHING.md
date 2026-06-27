@@ -4,7 +4,7 @@
 state is the release source of truth:
 
 - `Cargo.toml`
-- aligned version-bearing extension/plugin manifests updated by `just bump`
+- aligned version-bearing extension/plugin/runtime manifests updated by `just bump`
 - a matching Git tag `v<version>`
 
 The GitHub Actions workflow at
