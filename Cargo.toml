@@ -7,8 +7,8 @@ members = [
 
 [workspace.package]
 version = "0.1.0"
-edition = "2021"
-rust-version = "1.85"
+edition = "2026"
+rust-version = "1.96"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/q-rault/gdtest"
 homepage = "https://github.com/q-rault/gdtest"
