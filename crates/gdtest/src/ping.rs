@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 use crate::protocol::{Command, Event};
 use crate::worker::{Config, Worker};

@@ -25,7 +25,8 @@ timeout    = 5000       # per-test timeout in ms
 timeout_warn = 2000     # slow-test warning threshold in ms (no kill)
 fail_fast  = false      # stop after first failure
 retries    = 0          # re-run failing tests up to N extra times
-patterns   = ["test/**/*.gd", "**/*.test.gd"]  # discovery globs (these are the defaults)
+include    = ["test/**/*.gd", "**/*.test.gd"]  # discovery globs (these are the defaults)
+exclude    = ["test/helpers/**", "test/mocks/**"]  # discovery excludes for directory/default scans
 ```
 
 ## Profiles

@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use regex::Regex;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -357,8 +357,8 @@ fn compatibility_score(version: Version, hint: Option<VersionHint>) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        choose_candidate, compatibility_score, parse_version_output, project_version_hint,
-        Candidate, ProbedCandidate, Version, VersionHint,
+        Candidate, ProbedCandidate, Version, VersionHint, choose_candidate, compatibility_score,
+        parse_version_output, project_version_hint,
     };
     use std::ffi::OsString;
     use std::fs;

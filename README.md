@@ -237,9 +237,9 @@ Example:
 ```toml
 harness = "addons/gdtest/gdtest_worker.gd"
 display_mode = "headless"
-patterns = ["test/test_*.gd", "test/docs/**/test_*.gd"]
+include = ["test/test_*.gd", "test/docs/**/test_*.gd"]
+exclude = ["test/helpers/**", "test/mocks/**"]
 exclude_tags = ["harness-meta", "isolation-specific"]
-coverage_exclude = ["addons/**", "test/**"]
 plugins = ["res://addons/my_plugin/reporter.gd"]
 
 [profile.ci]

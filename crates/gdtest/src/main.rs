@@ -512,9 +512,6 @@ fn apply_config_defaults_from_data(
     if can_apply_config(matches, "exclude_tag") && !cfg.exclude_tags.is_empty() {
         cli.exclude_tag = cfg.exclude_tags;
     }
-    if can_apply_config(matches, "coverage_exclude") && !cfg.coverage_exclude.is_empty() {
-        cli.coverage_exclude = cfg.coverage_exclude;
-    }
     Ok(())
 }
 
@@ -525,9 +522,8 @@ fn can_apply_config(matches: &ArgMatches, id: &str) -> bool {
 }
 
 fn parse_value_enum<T: ValueEnum>(field: &str, value: &str) -> anyhow::Result<T> {
-    T::from_str(value, true).map_err(|_| anyhow::anyhow!(
-        "gdtest.toml: invalid `{field}` value `{value}`"
-    ))
+    T::from_str(value, true)
+        .map_err(|_| anyhow::anyhow!("gdtest.toml: invalid `{field}` value `{value}`"))
 }
 
 #[derive(Serialize)]
@@ -594,8 +590,10 @@ fn run_watch(
             file_targets.push(t.clone());
         }
     }
-    let patterns = config::load_patterns(&cfg.project_path);
-    let resolved_files = gdtest_analysis::resolve(&file_targets, &project_abs, &patterns)?;
+    let patterns = config::load_include(&cfg.project_path);
+    let exclude = config::load_exclude(&cfg.project_path);
+    let resolved_files =
+        gdtest_analysis::resolve(&file_targets, &project_abs, &patterns, &exclude)?;
     watch::run(watch::WatchOptions {
         project_path: project_abs,
         jobs,
@@ -675,8 +673,10 @@ fn targets_have_missing_uid(targets: &[String], project_path: &std::path::Path) 
         let path_part = t.split_once("::").map(|(s, _)| s).unwrap_or(t);
         file_targets.push(path_part.to_string());
     }
-    let patterns = config::load_patterns(&project_path.to_string_lossy());
-    let Ok(resolved) = gdtest_analysis::resolve(&file_targets, &project_abs, &patterns) else {
+    let patterns = config::load_include(&project_path.to_string_lossy());
+    let exclude = config::load_exclude(&project_path.to_string_lossy());
+    let Ok(resolved) = gdtest_analysis::resolve(&file_targets, &project_abs, &patterns, &exclude)
+    else {
         return false;
     };
     resolved.iter().any(|res| {
@@ -753,8 +753,9 @@ async fn run_pool(
     }
 
     // Resolve file targets to res:// paths, then tree-sitter-discover each.
-    let patterns = config::load_patterns(&cfg.project_path);
-    let mut files = gdtest_analysis::resolve(&file_targets, &project_abs, &patterns)?;
+    let patterns = config::load_include(&cfg.project_path);
+    let exclude = config::load_exclude(&cfg.project_path);
+    let mut files = gdtest_analysis::resolve(&file_targets, &project_abs, &patterns, &exclude)?;
 
     // Apply test impact analysis: keep only files affected by changed sources.
     if changed_only || changed_since.is_some() {
@@ -1045,7 +1046,7 @@ fn apply_partition(items: Vec<pool::TestItem>, spec: &str) -> anyhow::Result<Vec
         other => {
             return Err(anyhow::anyhow!(
                 "--partition: unknown mode `{other}`, expected `count` or `hash`"
-            ))
+            ));
         }
     };
     Ok(result)
@@ -1249,8 +1250,9 @@ async fn run_mutate(
             file_targets.push(t.clone());
         }
     }
-    let patterns = config::load_patterns(&cfg.project_path);
-    let files = gdtest_analysis::resolve(&file_targets, &project_abs, &patterns)?;
+    let patterns = config::load_include(&cfg.project_path);
+    let exclude = config::load_exclude(&cfg.project_path);
+    let files = gdtest_analysis::resolve(&file_targets, &project_abs, &patterns, &exclude)?;
     for file in &files {
         let abs = gdtest_analysis::res_to_abs(file, &project_abs)?;
         let entries = gdtest_analysis::list_test_entries_in(&abs).unwrap_or_default();

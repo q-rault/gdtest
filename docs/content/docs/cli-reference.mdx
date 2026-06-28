@@ -6,7 +6,7 @@ description: Every gdtest flag, env var, and subcommand.
 ## Synopsis
 
 ```sh
-gdtest                               # scan cwd using discovery patterns
+gdtest                               # scan cwd using discovery globs
 gdtest <target>... [options]
 gdtest init [--no-editor] [--force]
 gdtest res://test/foo.gd::test_bar   # single test, short-circuits pool
@@ -14,11 +14,11 @@ gdtest res://test/foo.gd::test_bar   # single test, short-circuits pool
 
 A `<target>` is one of:
 - `path/to/file.gd` — run every `test_*` in the file
-- `path/to/dir` — walk the directory using discovery patterns
+- `path/to/dir` — walk the directory using discovery globs
 - `res://path/to/file.gd` — same, with project-relative prefix
 - `file.gd::test_bar` — run exactly that one test function (`::` separates the file path from the function name; no worker pool is created, so you get full stderr output directly)
 
-**Discovery patterns** (configurable via `gdtest.toml`):
+**Discovery globs** (configurable via `gdtest.toml` `include` and `exclude`):
 - `test/**/*.gd` — any `.gd` file inside a `test/` directory
 - `**/*.test.gd` — co-located test files anywhere in the project
 

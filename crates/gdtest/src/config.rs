@@ -31,10 +31,6 @@ pub struct GdtestConfig {
     pub include_tags: Vec<String>,
     #[serde(default)]
     pub exclude_tags: Vec<String>,
-    /// Glob patterns (relative to project root) to exclude from coverage instrumentation.
-    /// Example: `["addons/**", "test/**"]`
-    #[serde(default)]
-    pub coverage_exclude: Vec<String>,
     /// Plugin scripts to load in the worker (internal).
     /// Each entry is a `res://` path to a GDScript that extends
     /// `Gdt.GdtReporter` or `Gdt.GdtFixture`.
@@ -45,7 +41,12 @@ pub struct GdtestConfig {
     /// Glob patterns (relative to project root) used to discover test files
     /// when walking directories. Defaults to `["test/**/*.gd", "**/*.test.gd"]`.
     #[serde(default)]
-    pub patterns: Vec<String>,
+    pub include: Vec<String>,
+    /// Glob patterns (relative to project root) excluded from test discovery
+    /// when walking directories. Explicit file targets still run.
+    /// Example: `["test/helpers/**", "test/mocks/**"]`
+    #[serde(default)]
+    pub exclude: Vec<String>,
 
     #[serde(default)]
     pub profile: HashMap<String, ProfileConfig>,
@@ -68,7 +69,7 @@ pub struct ProfileConfig {
     #[serde(default)]
     pub exclude_tags: Vec<String>,
     #[serde(default)]
-    pub coverage_exclude: Vec<String>,
+    pub exclude: Vec<String>,
 }
 
 impl GdtestConfig {
@@ -99,8 +100,8 @@ impl GdtestConfig {
         if !p.exclude_tags.is_empty() {
             self.exclude_tags = p.exclude_tags;
         }
-        if !p.coverage_exclude.is_empty() {
-            self.coverage_exclude = p.coverage_exclude;
+        if !p.exclude.is_empty() {
+            self.exclude = p.exclude;
         }
         Ok(())
     }
@@ -160,23 +161,31 @@ pub fn load_plugins(project_path: &str) -> Vec<String> {
     cfg.map(|c| c.plugins).unwrap_or_default()
 }
 
-/// Return the `patterns` list from `gdtest.toml`, or the built-in defaults.
+/// Return the `include` list from `gdtest.toml`, or the built-in defaults.
 /// Never returns an empty Vec — callers can always pass the result to `resolve`.
-pub fn load_patterns(project_path: &str) -> Vec<String> {
+pub fn load_include(project_path: &str) -> Vec<String> {
     let Ok(Some(cfg)) = load(Path::new(project_path)) else {
         return gdtest_analysis::DEFAULT_PATTERNS
             .iter()
             .map(|s| s.to_string())
             .collect();
     };
-    if cfg.patterns.is_empty() {
+    if cfg.include.is_empty() {
         gdtest_analysis::DEFAULT_PATTERNS
             .iter()
             .map(|s| s.to_string())
             .collect()
     } else {
-        cfg.patterns
+        cfg.include
     }
+}
+
+/// Return the `exclude` discovery list from `gdtest.toml`, or an empty Vec.
+pub fn load_exclude(project_path: &str) -> Vec<String> {
+    let Ok(Some(cfg)) = load(Path::new(project_path)) else {
+        return Vec::new();
+    };
+    cfg.exclude
 }
 
 #[cfg(test)]
@@ -202,5 +211,36 @@ mod tests {
         cfg.apply_profile("gui").unwrap();
 
         assert_eq!(cfg.display_mode.as_deref(), Some("windowed"));
+    }
+
+    #[test]
+    fn apply_profile_overlays_exclude() {
+        let mut cfg = GdtestConfig {
+            exclude: vec!["test/helpers/**".to_string()],
+            profile: HashMap::from([(
+                "ci".to_string(),
+                ProfileConfig {
+                    exclude: vec!["test/mocks/**".to_string()],
+                    ..ProfileConfig::default()
+                },
+            )]),
+            ..GdtestConfig::default()
+        };
+
+        cfg.apply_profile("ci").unwrap();
+
+        assert_eq!(cfg.exclude, vec!["test/mocks/**"]);
+    }
+
+    #[test]
+    fn patterns_key_is_rejected() {
+        let text = r#"
+patterns = ["test/**/*.gd"]
+"#;
+
+        let err = toml::from_str::<GdtestConfig>(text)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("unknown field `patterns`"));
     }
 }

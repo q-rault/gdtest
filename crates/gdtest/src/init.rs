@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
 #[derive(Clone, Copy)]
 struct Asset {
@@ -130,7 +130,7 @@ fn write_asset(target: &Path, contents: &str, force: bool) -> Result<bool> {
 
 #[cfg(test)]
 mod tests {
-    use super::{run, InitOptions};
+    use super::{InitOptions, run};
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};

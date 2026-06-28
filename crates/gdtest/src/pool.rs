@@ -15,12 +15,12 @@
 //!   in-flight test and the queue item is retried on a fresh worker.
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use anyhow::Result;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 
 use crate::protocol::{Command, Event};
 use crate::reporter::{Reporter, Summary};

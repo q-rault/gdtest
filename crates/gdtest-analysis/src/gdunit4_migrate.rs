@@ -595,33 +595,39 @@ func test_params() -> void:
         let text = String::from_utf8(out.source).unwrap();
         assert!(text.starts_with("# gdtest migrate gdunit4: manual follow-up required"));
         assert_eq!(out.status, GdUnit4MigrationStatus::RewriteIncomplete);
-        assert!(out
-            .blocked
-            .iter()
-            .any(|i| i.pattern == "@GdUnitTestParameters"));
-        assert!(out
-            .blocked
-            .iter()
-            .any(|i| i.pattern == "GdUnitTuple / tuple(...)"));
+        assert!(
+            out.blocked
+                .iter()
+                .any(|i| i.pattern == "@GdUnitTestParameters")
+        );
+        assert!(
+            out.blocked
+                .iter()
+                .any(|i| i.pattern == "GdUnitTuple / tuple(...)")
+        );
         assert!(out.blocked.iter().any(|i| i.pattern == "RETURN_DEEP_STUB"));
-        assert!(out
-            .blocked
-            .iter()
-            .any(|i| i.pattern == "verify_no_more_interactions(...)"));
+        assert!(
+            out.blocked
+                .iter()
+                .any(|i| i.pattern == "verify_no_more_interactions(...)")
+        );
         assert!(out.blocked.iter().any(|i| i.pattern == "reset(...)"));
         assert!(out.blocked.iter().any(|i| i.pattern == "InputFactory.*"));
-        assert!(out
-            .manual_followups
-            .iter()
-            .any(|i| i.pattern == "monitor_signals(...)"));
-        assert!(out
-            .manual_followups
-            .iter()
-            .any(|i| i.pattern == "verify_signal(...)"));
-        assert!(out
-            .manual_followups
-            .iter()
-            .any(|i| i.pattern == "clean_temp_dir(...)"));
+        assert!(
+            out.manual_followups
+                .iter()
+                .any(|i| i.pattern == "monitor_signals(...)")
+        );
+        assert!(
+            out.manual_followups
+                .iter()
+                .any(|i| i.pattern == "verify_signal(...)")
+        );
+        assert!(
+            out.manual_followups
+                .iter()
+                .any(|i| i.pattern == "clean_temp_dir(...)")
+        );
     }
 
     #[test]

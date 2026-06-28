@@ -5,7 +5,7 @@ use std::process::Stdio;
 #[cfg(windows)]
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command as TokioCommand};
 use tokio::sync::mpsc;
@@ -272,7 +272,7 @@ fn pty_stderr() -> Result<(Stdio, mpsc::UnboundedReceiver<String>)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{base_args, Config, DisplayMode};
+    use super::{Config, DisplayMode, base_args};
 
     fn test_config(display_mode: DisplayMode) -> Config {
         Config {
@@ -304,6 +304,9 @@ mod tests {
     #[test]
     fn windowed_mode_omits_headless_flag() {
         let args = base_args(&test_config(DisplayMode::Windowed));
-        assert_eq!(args, vec!["--path", ".", "-s", "addons/gdtest/gdtest_worker.gd"]);
+        assert_eq!(
+            args,
+            vec!["--path", ".", "-s", "addons/gdtest/gdtest_worker.gd"]
+        );
     }
 }

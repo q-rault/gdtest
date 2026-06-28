@@ -2,7 +2,7 @@
 //!
 //! Two layers:
 //! 1. [`resolve`] turns user-supplied paths (files, directories, `res://…`)
-//!    into a flat list of `res://…` paths, filtered by discovery patterns.
+//!    into a flat list of `res://…` paths, filtered by discovery include/exclude globs.
 //! 2. [`list_tests_in`] parses one GDScript file with tree-sitter-gdscript
 //!    and returns every `func test_*()` name in source order.
 //!
@@ -10,12 +10,12 @@
 //!   - `test/**/*.gd`  — any `.gd` file inside a `test/` directory tree
 //!   - `**/*.test.gd`  — co-located test files anywhere in the project
 //!
-//! Users can override via `gdtest.toml`:  `patterns = ["test/**/*.gd", "**/*.test.gd"]`
+//! Users can override via `gdtest.toml`:  `include = ["test/**/*.gd", "**/*.test.gd"]`
 //!
 //! Target: discovering 500 tests across 50 files in <100 ms on a warm cache
 //! (internal success criterion).
 
-/// Default discovery patterns used when no `patterns` key is in `gdtest.toml`.
+/// Default discovery globs used when no `include` key is in `gdtest.toml`.
 pub const DEFAULT_PATTERNS: &[&str] = &["test/**/*.gd", "**/*.test.gd"];
 
 pub mod coverage;
@@ -25,26 +25,33 @@ pub mod gut_migrate;
 pub mod mutate;
 pub mod rewrite;
 pub use gdunit4_migrate::{
-    is_gdunit4_test_file, is_gdunit4_test_source, migrate_gdunit4_file, migrate_gdunit4_source,
     GdUnit4MigrationAction, GdUnit4MigrationIssue, GdUnit4MigrationOutput, GdUnit4MigrationStatus,
+    is_gdunit4_test_file, is_gdunit4_test_source, migrate_gdunit4_file, migrate_gdunit4_source,
 };
 pub use gut_migrate::{
-    is_gut_test_file, is_gut_test_source, migrate_gut_file, migrate_gut_source, GutMigrationAction,
-    GutMigrationIssue, GutMigrationOutput, GutMigrationStatus,
+    GutMigrationAction, GutMigrationIssue, GutMigrationOutput, GutMigrationStatus,
+    is_gut_test_file, is_gut_test_source, migrate_gut_file, migrate_gut_source,
 };
-pub use rewrite::{rewrite_file, rewrite_source, RewriteOutput};
+pub use rewrite::{RewriteOutput, rewrite_file, rewrite_source};
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use tree_sitter::Parser;
 use walkdir::WalkDir;
 
 /// Normalise every input path into a list of `res://…` test-file paths.
 ///
 /// `patterns` is a slice of glob strings (relative to project root) used when
-/// walking directories. Pass [`DEFAULT_PATTERNS`] when no custom config is set.
-pub fn resolve(inputs: &[String], project_path: &Path, patterns: &[String]) -> Result<Vec<String>> {
+/// walking directories. `exclude_patterns` is a slice of discovery-exclude
+/// globs, also relative to project root. Pass [`DEFAULT_PATTERNS`] and `[]`
+/// when no custom config is set.
+pub fn resolve(
+    inputs: &[String],
+    project_path: &Path,
+    patterns: &[String],
+    exclude_patterns: &[String],
+) -> Result<Vec<String>> {
     let project_abs = project_path
         .canonicalize()
         .with_context(|| format!("project path does not exist: {}", project_path.display()))?;
@@ -84,6 +91,9 @@ pub fn resolve(inputs: &[String], project_path: &Path, patterns: &[String]) -> R
                 let rel = ep.strip_prefix(&project_abs).unwrap_or(&ep);
                 let rel_str = rel.to_string_lossy().replace('\\', "/");
                 if !patterns.iter().any(|p| glob_match(p, &rel_str)) {
+                    continue;
+                }
+                if exclude_patterns.iter().any(|p| glob_match(p, &rel_str)) {
                     continue;
                 }
                 out.push(to_res_path(&ep, &project_abs)?);
@@ -442,6 +452,19 @@ pub fn res_to_abs(res_path: &str, project_abs: &Path) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn make_temp_project(prefix: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("gdtest-{prefix}-{nonce}"));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
 
     #[test]
     fn extracts_test_functions() {
@@ -665,5 +688,48 @@ class IgnoredClass:
         // Nested describe dirs: return innermost
         let p = PathBuf::from("test/describe_Outer/describe_Inner/foo.gd");
         assert_eq!(extract_describe_dir(&p), Some("describe_Inner".to_string()));
+    }
+
+    #[test]
+    fn resolve_excludes_discovery_globs_for_directory_walks() {
+        let project = make_temp_project("resolve-exclude-dir");
+        fs::create_dir_all(project.join("test/helpers")).unwrap();
+        fs::create_dir_all(project.join("test/cases")).unwrap();
+        fs::write(
+            project.join("test/helpers/helper.gd"),
+            "extends RefCounted\n",
+        )
+        .unwrap();
+        fs::write(
+            project.join("test/cases/test_ok.gd"),
+            "extends RefCounted\n",
+        )
+        .unwrap();
+
+        let inputs = vec!["test".to_string()];
+        let patterns = vec!["test/**/*.gd".to_string()];
+        let excludes = vec!["test/helpers/**".to_string()];
+        let resolved = resolve(&inputs, &project, &patterns, &excludes).unwrap();
+
+        assert_eq!(resolved, vec!["res://test/cases/test_ok.gd"]);
+
+        fs::remove_dir_all(project).ok();
+    }
+
+    #[test]
+    fn resolve_keeps_explicit_file_targets_even_if_excluded() {
+        let project = make_temp_project("resolve-explicit-file");
+        fs::create_dir_all(project.join("test/helpers")).unwrap();
+        let helper = project.join("test/helpers/helper.gd");
+        fs::write(&helper, "extends RefCounted\n").unwrap();
+
+        let inputs = vec![helper.to_string_lossy().into_owned()];
+        let patterns = vec!["test/**/*.gd".to_string()];
+        let excludes = vec!["test/helpers/**".to_string()];
+        let resolved = resolve(&inputs, &project, &patterns, &excludes).unwrap();
+
+        assert_eq!(resolved, vec!["res://test/helpers/helper.gd"]);
+
+        fs::remove_dir_all(project).ok();
     }
 }

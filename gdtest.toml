@@ -1,7 +1,7 @@
 harness = "addons/gdtest/gdtest_worker.gd"
 
 # Only scan test files; exclude fixtures/, support/, and docs dungeon helpers.
-patterns = ["test/test_*.gd", "test/docs/**/test_*.gd"]
+include = ["test/test_*.gd", "test/docs/**/test_*.gd"]
 
 # harness-meta: tests that deliberately fail to exercise harness behaviour.
 # isolation-specific: tests that require -j 1 to be meaningful.

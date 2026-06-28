@@ -692,30 +692,36 @@ func test_unsupported():
         let text = String::from_utf8(out.source).unwrap();
         assert!(text.starts_with("# gdtest migrate gut: manual follow-up required"));
         assert_eq!(out.status, GutMigrationStatus::RewriteIncomplete);
-        assert!(out
-            .blocked
-            .iter()
-            .any(|i| i.pattern == "should_skip_script()"));
-        assert!(out
-            .blocked
-            .iter()
-            .any(|i| i.pattern == "use_parameters(...)"));
-        assert!(out
-            .blocked
-            .iter()
-            .any(|i| i.pattern == "assert_engine_error*"));
-        assert!(out
-            .manual_followups
-            .iter()
-            .any(|i| i.pattern == "watch_signals(...)"));
-        assert!(out
-            .manual_followups
-            .iter()
-            .any(|i| i.pattern == "assert_signal_emitted(signal_ref, ...)"));
-        assert!(out
-            .manual_followups
-            .iter()
-            .any(|i| i.pattern == "wait_process_frames(...)"));
+        assert!(
+            out.blocked
+                .iter()
+                .any(|i| i.pattern == "should_skip_script()")
+        );
+        assert!(
+            out.blocked
+                .iter()
+                .any(|i| i.pattern == "use_parameters(...)")
+        );
+        assert!(
+            out.blocked
+                .iter()
+                .any(|i| i.pattern == "assert_engine_error*")
+        );
+        assert!(
+            out.manual_followups
+                .iter()
+                .any(|i| i.pattern == "watch_signals(...)")
+        );
+        assert!(
+            out.manual_followups
+                .iter()
+                .any(|i| i.pattern == "assert_signal_emitted(signal_ref, ...)")
+        );
+        assert!(
+            out.manual_followups
+                .iter()
+                .any(|i| i.pattern == "wait_process_frames(...)")
+        );
     }
 
     #[test]

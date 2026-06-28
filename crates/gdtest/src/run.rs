@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use owo_colors::OwoColorize;
 
 use crate::protocol::{Command, Event};
