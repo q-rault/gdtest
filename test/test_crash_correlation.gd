@@ -1,6 +1,6 @@
 extends RefCounted
 
-# Exercises internal correlation. A GDScript null-deref logs `SCRIPT ERROR`
+# Exercises crash correlation. A GDScript null-deref logs `SCRIPT ERROR`
 # and aborts the test function mid-way. Without correlation, every test
 # below would show up as `pass` because the subsequent `expect()` never
 # executes — a silent false positive.
@@ -8,7 +8,7 @@ extends RefCounted
 func test_silent_script_error_escalates() -> void:
 	var h: Object = Engine.get_meta("gdt_harness")
 	var x: Object = null
-	printerr(char(27) + "[32m[gdtest] intentional SCRIPT ERROR below — null-deref to test crash correlation (internal)" + char(27) + "[0m")
+	printerr(char(27) + "[32m[gdtest] intentional SCRIPT ERROR below — null-deref to test crash correlation" + char(27) + "[0m")
 	var _y: Variant = x.some_property
 	h.expect(true, "never reached")
 

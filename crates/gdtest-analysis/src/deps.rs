@@ -1,4 +1,4 @@
-//! GDScript dependency graph for test impact analysis (internal).
+//! GDScript dependency graph for test impact analysis.
 //!
 //! Parses `extends`, `preload()`, and `load()` calls to build a reverse
 //! dependency map: changed_file → test files that transitively import it.

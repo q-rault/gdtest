@@ -1,11 +1,11 @@
-//! Worker pool + MPSC test dispatch (M2/M3: internal/70/71/73/77).
+//! Worker pool + MPSC test dispatch.
 //!
 //! Work item granularity: a `(script, func)` pair. Tree-sitter discovery
 //! (gdtest-analysis) produces the full list; the pool dispatches each to
 //! whichever worker grabs it off the shared queue first — load-balanced
 //! for free, no shard pre-computation.
 //!
-//! Per-test internal correlation:
+//! Per-test crash correlation:
 //! - Each submit is followed by exactly one result event (TestPass /
 //!   TestFail / TestError), preceded by a TestStart. Between TestStart
 //!   and the result we buffer stderr `SCRIPT ERROR` lines and escalate
@@ -243,6 +243,7 @@ pub async fn run(items: Vec<TestItem>, opts: PoolOptions) -> Result<(Summary, Ve
     Ok((summary, event_log))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn worker_loop(
     id: usize,
     cfg: Config,
@@ -371,7 +372,7 @@ async fn worker_loop(
             continue;
         }
 
-        // internal: in --isolation=test, force a worker recycle after every
+        // In --isolation=test, force a worker recycle after every
         // test. The old worker's Child has kill_on_drop=true so swapping
         // worker via try_respawn drops the previous instance and Godot
         // exits. We don't bother sending Shutdown first: the kill is

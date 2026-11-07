@@ -1,6 +1,6 @@
 extends RefCounted
 
-# Exercises internal await support.
+# Exercises await support.
 
 func test_sync_still_works() -> void:
 	var h: Object = Engine.get_meta("gdt_harness")

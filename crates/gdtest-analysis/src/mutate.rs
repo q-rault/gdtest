@@ -1,4 +1,4 @@
-//! GDScript mutation testing operators (internal).
+//! GDScript mutation testing operators.
 //!
 //! Generates single-point mutations by replacing operators/literals in
 //! GDScript source text. Mutations inside string literals and comments are
@@ -110,8 +110,8 @@ pub fn find_mutations(source: &[u8]) -> Vec<Mutation> {
                 if from == "true" || from == "false" {
                     let prev = abs.checked_sub(1).map(|i| code.as_bytes()[i]);
                     let next = code.as_bytes().get(abs + from.len()).copied();
-                    let prev_ok = prev.map_or(true, |b| !b.is_ascii_alphanumeric() && b != b'_');
-                    let next_ok = next.map_or(true, |b| !b.is_ascii_alphanumeric() && b != b'_');
+                    let prev_ok = prev.is_none_or(|b| !b.is_ascii_alphanumeric() && b != b'_');
+                    let next_ok = next.is_none_or(|b| !b.is_ascii_alphanumeric() && b != b'_');
                     if !prev_ok || !next_ok {
                         continue;
                     }

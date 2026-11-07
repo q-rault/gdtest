@@ -95,14 +95,14 @@ fn collect_body_lines(node: tree_sitter::Node, lines: &mut HashSet<u32>) {
         // func_start_row + 1 so the header line is never instrumented.
         let mut body_start_row = func_start_row + 1;
         for i in 0..node.child_count() {
-            if let Some(child) = node.child(i as u32) {
-                if child.kind() == "body" {
-                    let bsr = child.start_position().row as u32;
-                    if bsr > func_start_row {
-                        body_start_row = bsr;
-                    }
-                    break;
+            if let Some(child) = node.child(i as u32)
+                && child.kind() == "body"
+            {
+                let bsr = child.start_position().row as u32;
+                if bsr > func_start_row {
+                    body_start_row = bsr;
                 }
+                break;
             }
         }
 

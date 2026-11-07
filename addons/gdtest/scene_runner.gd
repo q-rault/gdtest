@@ -1,7 +1,7 @@
 class_name SceneRunner
 extends RefCounted
 
-# SceneRunner — input simulation helper (internal).
+# SceneRunner — input simulation helper.
 #
 # Obtain via `scene_runner(packed)` from a GdTest (or Gdt.scene_runner()).
 # The scene is already instantiated and attached to the test container.

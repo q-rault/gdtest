@@ -1,6 +1,6 @@
 extends SceneTree
 
-# gdtest worker (M2 + internal await support).
+# gdtest worker.
 #
 # Architecture:
 # - A background Thread reads JSON commands off stdin into a Mutex-protected
@@ -16,7 +16,7 @@ extends SceneTree
 # Protocol reference: crates/gdtest/src/protocol.rs.
 
 const OUT_PREFIX := "GDTEST_OUT:"
-const HARNESS_VERSION := "0.1.1"
+const HARNESS_VERSION := "0.2.0"
 
 var _current_failures: Array[String] = []
 var _pending_msg: String = ""
@@ -40,7 +40,7 @@ var _stdin_thread: Thread = null
 var _stop_requested: bool = false
 var _processing: bool = false
 var _world_counter: int = 0
-# Plugin registries loaded from GDTEST_PLUGINS env var (internal).
+# Plugin registries loaded from GDTEST_PLUGINS env var.
 var _reporter_plugins: Array = []  # instances of Gdt.GdtReporter subclasses
 var _fixture_plugins: Array = []   # instances of Gdt.GdtFixture subclasses
 var _current_test_file: String = ""  # res:// path of the currently-running test file
@@ -48,7 +48,7 @@ var _current_test_file: String = ""  # res:// path of the currently-running test
 var _active_suite_script: String = ""
 var _active_suite_instance: Object = null
 
-# ── TestWorld / ActorProxy inner classes (internal) ────────────────────────────
+# ── TestWorld / ActorProxy inner classes ────────────────────────────
 
 class ActorProxyImpl extends RefCounted:
 	var instance: Object
@@ -208,7 +208,7 @@ func trim_failures(n: int) -> void:
 	while _current_failures.size() > n:
 		_current_failures.pop_back()
 
-# ── Snapshot assertions (internal) ────────────────────────────────────────────
+# ── Snapshot assertions ────────────────────────────────────────────
 #
 # Snapshots live next to the test file:
 #   test/test_player.gd  →  test/__snapshots__/test_player/<name>.gdsnap
@@ -294,7 +294,7 @@ func wait_while(predicate: Callable, timeout_ms: float = 2000.0) -> void:
 			return
 		await process_frame
 
-# ── Scene tree helpers (internal) ──────────────────────────────────────────
+# ── Scene tree helpers ──────────────────────────────────────────
 
 # Adds `node` as a child of the per-test container so it gets freed when
 # the test finishes. Returns the node for chaining. The container is
@@ -865,7 +865,7 @@ func assert_no_new_orphans(msg: String = "") -> bool:
 		"assert_no_new_orphans: %d new orphan node(s) detected" % delta
 	return expect(false, m)
 
-# ── Memory tracking + autoref scoping (internal) ──────────────────────────────
+# ── Memory tracking + autoref scoping ──────────────────────────────
 
 func _snapshot_memory_baseline() -> void:
 	_memory_baseline = int(Performance.get_monitor(Performance.MEMORY_STATIC))
@@ -891,7 +891,7 @@ func _cleanup_autorefs() -> void:
 				obj.free()
 	_autoref_registry.clear()
 
-# ── Property / export assertions (internal) ───────────────────────────────────
+# ── Property / export assertions ───────────────────────────────────
 
 func _find_property(obj: Object, prop_name: String) -> Dictionary:
 	for prop in obj.get_property_list():
@@ -976,7 +976,7 @@ func _free_instance(instance: Object) -> void:
 		return
 	instance.free()
 
-# ── Plugin system (internal) ───────────────────────────────────────────────────
+# ── Plugin system ───────────────────────────────────────────────────
 
 func _load_plugins() -> void:
 	var env: String = OS.get_environment("GDTEST_PLUGINS")

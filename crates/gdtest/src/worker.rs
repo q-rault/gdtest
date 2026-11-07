@@ -27,7 +27,7 @@ pub struct Config {
     pub display_mode: DisplayMode,
     pub update_snapshots: bool,
     pub seed: Option<u64>,
-    /// `res://` paths of plugin scripts to load in the worker (internal).
+    /// `res://` paths of plugin scripts to load in the worker.
     pub plugins: Vec<String>,
 }
 

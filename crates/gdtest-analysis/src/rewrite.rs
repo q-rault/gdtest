@@ -76,7 +76,7 @@ pub fn rewrite_source(source: &[u8], original_res_path: &str) -> RewriteOutput {
         };
     }
 
-    replacements.sort_by(|a, b| b.0.cmp(&a.0));
+    replacements.sort_by_key(|r| std::cmp::Reverse(r.0));
     let mut result = source.to_vec();
     for (start, end, replacement) in &replacements {
         result.splice(start..end, replacement.bytes());
@@ -155,11 +155,11 @@ fn find_asserts(source: &[u8]) -> Option<Vec<AssertInfo>> {
 }
 
 fn collect_assert_calls(node: tree_sitter::Node, source: &[u8], out: &mut Vec<AssertInfo>) {
-    if node.kind() == "call" {
-        if let Some(info) = parse_assert_call(node, source) {
-            out.push(info);
-            return; // don't descend further into this call
-        }
+    if node.kind() == "call"
+        && let Some(info) = parse_assert_call(node, source)
+    {
+        out.push(info);
+        return; // don't descend further into this call
     }
     for i in 0..node.child_count() {
         if let Some(child) = node.child(i as u32) {
@@ -237,10 +237,10 @@ fn try_parse_binary(node: tree_sitter::Node, source: &[u8]) -> Option<BinaryInfo
             } else {
                 right = Some(child);
             }
-        } else if let Ok(txt) = child.utf8_text(source) {
-            if let Some(parsed) = BinaryOp::from_text(txt) {
-                op = Some(parsed);
-            }
+        } else if let Ok(txt) = child.utf8_text(source)
+            && let Some(parsed) = BinaryOp::from_text(txt)
+        {
+            op = Some(parsed);
         }
     }
 

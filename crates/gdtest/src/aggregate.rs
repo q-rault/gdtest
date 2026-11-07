@@ -1,4 +1,4 @@
-//! JUnit XML shard aggregation (internal Phase 1).
+//! JUnit XML shard aggregation.
 //!
 //! Reads multiple JUnit XML files produced by `gdtest --reporter junit`
 //! and merges them into a single `<testsuites>` document. Designed for

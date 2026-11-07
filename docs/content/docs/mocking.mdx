@@ -25,7 +25,7 @@ func test_battle_applies_attack_damage() -> void:
     assert_called(ai, "choose_action")
 ```
 
-`mock(EnemyAI)` creates a runtime double — all public methods exist but do nothing and return `null` by default. `stub` overrides a specific method to return a value you choose. `assert_called` verifies the method was actually invoked during the turn.
+`mock(EnemyAI)` creates a runtime double — all public methods exist but do nothing and return their declared type's zero value (or `null` for object and untyped methods) by default. `stub` overrides a specific method to return a value you choose. `assert_called` verifies the method was actually invoked during the turn.
 
 ## Asserting call count
 

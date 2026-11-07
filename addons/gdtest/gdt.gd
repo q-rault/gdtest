@@ -163,7 +163,7 @@ class _ChoiceGen extends RefCounted:
 			return []
 		return [_choices[0]]
 
-# ── Plugin base classes (internal) ─────────────────────────────────────────
+# ── Plugin base classes ─────────────────────────────────────────
 #
 # Extend GdtReporter in an addon and list its path under `plugins` in
 # gdtest.toml to receive test lifecycle events without modifying test files.
@@ -739,7 +739,7 @@ static func reset_physics_delta() -> void:
 		return
 	h.reset_physics_delta()
 
-# ── Scene tree helpers (internal) ──────────────────────────────────────────
+# ── Scene tree helpers ──────────────────────────────────────────
 
 # Adds `node` under the per-test container so it gets freed automatically
 # when the test ends. Returns the node so you can chain:
@@ -923,7 +923,7 @@ static func assert_no_signal(node: Object, sig: String, timeout_ms: float = 200.
 		return
 	await h.watch_no_signal(node, sig, timeout_ms)
 
-# ── Snapshot assertions (internal) ────────────────────────────────────────────
+# ── Snapshot assertions ────────────────────────────────────────────
 
 # Serializes `actual` with var_to_str and compares against a stored snapshot
 # file. On the first call the file is created and the test passes. On
@@ -949,7 +949,7 @@ static func assert_snapshot(actual: Variant, name: String = "", script_path: Str
 #   Gdt.assert_called(hp, "get_hp")
 #   Gdt.assert_called_with(hp, "take_damage", [50])
 
-# ── Argument matchers (internal) ───────────────────────────────────────────
+# ── Argument matchers ───────────────────────────────────────────
 
 static func any():
 	return GdtMatcher.new(func(_v: Variant) -> bool: return true)
@@ -990,58 +990,145 @@ static func _args_match(actual: Array, expected: Array) -> bool:
 			return false
 	return true
 
-# Shared code generator for spy and partial_mock: subclass that records all
-# calls and delegates to super when no stub is configured.
-static func _build_passthrough_script(klass: GDScript, caller: String) -> GDScript:
-	var extends_path: String = klass.resource_path
-	if extends_path == "":
-		push_error("Gdt.%s: script has no resource path (anonymous script not supported)" % caller)
-		return null
-	var methods: Array = klass.get_script_method_list()
-
-	var src := 'extends "%s"\n\n' % extends_path
+# ── Double code generation ───────────────────────────────────────────────────
+# Mocks, spies and partial mocks are generated subclasses of the doubled script,
+# so they stay assignable to typed variables and pass `is` checks. An override
+# has to honour the parent's signature, which shapes the generated code:
+#
+#   - `void` methods record the call but cannot return a value, so a stub on one
+#     has no effect (Godot 4.7 rejects `return <value>` in such an override).
+#   - typed methods return the type's zero value when unstubbed, because `null`
+#     is not a valid `int`, `String`, `Array[int]`, ...
+#   - stubbed values must match the declared return type.
+static func _double_source(klass: GDScript, passthrough: bool, extra: String = "") -> String:
+	var src := ""
+	if klass.resource_path != "":
+		src += 'extends "%s"\n\n' % klass.resource_path
+	else:
+		src += "extends RefCounted\n\n"
+	var methods := ""
+	var void_methods := {}
+	var seen := {}
+	for md in klass.get_script_method_list():
+		var mname: String = md["name"]
+		# The list repeats overridden methods once per class in the hierarchy.
+		# Private, generated (`@x_setter`) and static methods are not doubled.
+		if seen.has(mname) or mname.begins_with("_") or mname.contains("@") or mname.contains("<"):
+			continue
+		if md["flags"] & METHOD_FLAG_STATIC:
+			continue
+		seen[mname] = true
+		if _double_is_void(md):
+			void_methods[mname] = true
+		methods += _double_method_source(md, passthrough)
 	src += "var __calls: Dictionary = {}\n"
 	src += "var __stubs: Dictionary = {}\n"
 	src += "var __stub_patterns: Array = []\n"
-	src += "var __call_log: Array = []\n\n"
-	src += "func __record(m: String, a: Array) -> void:\n"
+	src += "var __call_log: Array = []\n"
+	src += "var __void_methods: Dictionary = %s\n\n" % var_to_str(void_methods).replace("\n", " ")
+	src += extra
+	src += "func __record(m: String, a: Array) -> Array:\n"
 	src += "\tif not __calls.has(m): __calls[m] = []\n"
 	src += "\t__calls[m].append(a)\n"
-	src += "\t__call_log.append([m, a])\n\n"
-	src += "func __spy_stub(m: String, a: Array) -> Array:\n"
+	src += "\t__call_log.append([m, a])\n"
 	src += '\tvar ka: String = str(m) + "|" + str(a)\n'
 	src += "\tif __stubs.has(ka): return [true, __stubs[ka]]\n"
 	src += "\tif __stubs.has(m): return [true, __stubs[m]]\n"
 	src += "\tfor p in __stub_patterns:\n"
 	src += '\t\tif p[0] == m and Gdt._args_match(a, p[1]): return [true, p[2]]\n'
 	src += "\treturn [false, null]\n\n"
+	return src + methods
 
-	for md in methods:
-		var mname: String = md["name"]
-		if mname.begins_with("_"):
-			continue
-		var arg_list: PackedStringArray = PackedStringArray()
-		for i in md.get("args", []).size():
-			arg_list.append("a%d" % i)
-		var arg_str: String = ", ".join(arg_list)
-		var arr_str: String = "[%s]" % ", ".join(arg_list) if arg_list.size() > 0 else "[]"
-		var ret_type: int = md.get("return", {}).get("type", 0)
-		src += "func %s(%s):\n" % [mname, arg_str]
-		src += '\t__record("%s", %s)\n' % [mname, arr_str]
-		src += '\tvar __s := __spy_stub("%s", %s)\n' % [mname, arr_str]
-		src += "\tif __s[0]: return __s[1]\n"
-		if ret_type != 0:
-			src += "\treturn super.%s(%s)\n\n" % [mname, arg_str]
+static func _double_method_source(md: Dictionary, passthrough: bool) -> String:
+	var mname: String = md["name"]
+	var args: Array = md.get("args", [])
+	var defaults: Array = md.get("default_args", [])
+	var first_default: int = args.size() - defaults.size()
+	var names := PackedStringArray()
+	var params := PackedStringArray()
+	for i in args.size():
+		var arg_name := "a%d" % i
+		names.append(arg_name)
+		if i >= first_default:
+			params.append("%s = %s" % [arg_name, _double_default_arg(defaults[i - first_default], args[i])])
 		else:
-			src += "\tsuper.%s(%s)\n\n" % [mname, arg_str]
+			params.append(arg_name)
+	var arg_str := ", ".join(names)
+	var recorded := "[%s]" % arg_str
+	if md["flags"] & METHOD_FLAG_VARARG:
+		# Passthrough forwards declared parameters only: GDScript cannot spread
+		# an array into a `super` call.
+		params.append("...__rest")
+		recorded += " + __rest"
+	var src := "func %s(%s):\n" % [mname, ", ".join(params)]
+	if _double_is_void(md):
+		src += '\t__record("%s", %s)\n' % [mname, recorded]
+		if passthrough:
+			src += "\tsuper.%s(%s)\n" % [mname, arg_str]
+		return src + "\n"
+	src += '\tvar __s: Array = __record("%s", %s)\n' % [mname, recorded]
+	src += "\tif __s[0]: return __s[1]\n"
+	if passthrough:
+		src += "\treturn super.%s(%s)\n" % [mname, arg_str]
+	else:
+		src += _double_default_return(md.get("return", {}))
+	return src + "\n"
 
+# Void methods report TYPE_NIL without the "nil is variant" usage flag. Before
+# Godot 4.7, an untyped method with no return value looks the same.
+static func _double_is_void(md: Dictionary) -> bool:
+	var ret: Dictionary = md.get("return", {})
+	return ret.get("type", TYPE_NIL) == TYPE_NIL and not (ret.get("usage", 0) & PROPERTY_USAGE_NIL_IS_VARIANT)
+
+static func _double_default_return(ret: Dictionary) -> String:
+	var type: int = ret.get("type", TYPE_NIL)
+	var hint: String = ret.get("hint_string", "")
+	if type == TYPE_ARRAY and hint.replace(".", "_").is_valid_ascii_identifier():
+		return "\tvar __d: Array[%s] = []\n\treturn __d\n" % hint
+	if type == TYPE_DICTIONARY and hint.count(";") == 1:
+		return "\tvar __d: Dictionary[%s] = {}\n\treturn __d\n" % hint.replace(";", ", ")
+	return "\treturn %s\n" % _double_zero_literal(type)
+
+# A default that is not a constant (`e: Array = []`) is reported as null, so the
+# parameter's zero value stands in for it.
+static func _double_default_arg(value: Variant, arg: Dictionary) -> String:
+	if value == null or value is Object:
+		return _double_zero_literal(arg.get("type", TYPE_NIL))
+	return var_to_str(value).replace("\n", " ")
+
+static func _double_zero_literal(type: int) -> String:
+	match type:
+		TYPE_NIL, TYPE_OBJECT:
+			return "null"
+		# type_convert() would stringify null into "<null>" for these.
+		TYPE_STRING:
+			return '""'
+		TYPE_STRING_NAME:
+			return '&""'
+		TYPE_NODE_PATH:
+			return '^""'
+	return var_to_str(type_convert(null, type)).replace("\n", " ")
+
+static func _double_compile(src: String, caller: String, target: String) -> GDScript:
 	var gen := GDScript.new()
 	gen.source_code = src
 	var err := gen.reload()
 	if err != OK:
-		push_error("Gdt.%s: failed to compile for '%s' (error %d)\nsource:\n%s" % [caller, extends_path, err, src])
+		push_error("Gdt.%s: failed to compile double for '%s' (error %d)\nsource:\n%s" % [caller, target, err, src])
 		return null
 	return gen
+
+static func _double_warn_if_void(mock_obj: Object, method_name: String) -> void:
+	if mock_obj.__void_methods.has(method_name):
+		push_warning("Gdt.stub: '%s' returns void, so its stubbed value is ignored" % method_name)
+
+# Shared generator for spy and partial_mock: a subclass that records all calls
+# and delegates to super when no stub is configured.
+static func _build_passthrough_script(klass: GDScript, caller: String) -> GDScript:
+	if klass.resource_path == "":
+		push_error("Gdt.%s: script has no resource path (anonymous script not supported)" % caller)
+		return null
+	return _double_compile(_double_source(klass, true), caller, klass.resource_path)
 
 # Creates a spy around `real`: all methods run their real implementation and
 # calls are recorded. Use `stub` to override specific methods.
@@ -1109,97 +1196,24 @@ static func mock_singleton(name: String) -> Object:
 	return mock_node
 
 static func _build_autoload_mock(klass: GDScript, singleton_name: String) -> Node:
-	var extends_path: String = klass.resource_path
-	if extends_path == "":
+	if klass.resource_path == "":
 		push_error("Gdt.mock_singleton: '%s' script has no resource path" % singleton_name)
 		return null
-	var methods: Array = klass.get_script_method_list()
-
-	var src := 'extends "%s"\n\n' % extends_path
-	src += "var __calls: Dictionary = {}\n"
-	src += "var __stubs: Dictionary = {}\n"
-	src += "var __stub_patterns: Array = []\n"
-	src += "var __call_log: Array = []\n\n"
-	src += "func _ready() -> void: pass\n"
-	src += "func _enter_tree() -> void: pass\n"
-	src += "func _exit_tree() -> void: pass\n"
-	src += "func _process(_d: float) -> void: pass\n"
-	src += "func _physics_process(_d: float) -> void: pass\n\n"
-	src += "func __record(m: String, a: Array) -> Variant:\n"
-	src += "\tif not __calls.has(m): __calls[m] = []\n"
-	src += "\t__calls[m].append(a)\n"
-	src += "\t__call_log.append([m, a])\n"
-	src += '\tvar ka: String = str(m) + "|" + str(a)\n'
-	src += "\tif __stubs.has(ka): return __stubs[ka]\n"
-	src += "\tif __stubs.has(m): return __stubs[m]\n"
-	src += "\tfor p in __stub_patterns:\n"
-	src += '\t\tif p[0] == m and Gdt._args_match(a, p[1]): return p[2]\n'
-	src += "\treturn null\n\n"
-
-	for md in methods:
-		var mname: String = md["name"]
-		if mname.begins_with("_"):
-			continue
-		var arg_list: PackedStringArray = PackedStringArray()
-		for i in md.get("args", []).size():
-			arg_list.append("a%d" % i)
-		var arg_str: String = ", ".join(arg_list)
-		var arr_str: String = "[%s]" % ", ".join(arg_list) if arg_list.size() > 0 else "[]"
-		src += "func %s(%s):\n" % [mname, arg_str]
-		src += '\treturn __record("%s", %s)\n\n' % [mname, arr_str]
-
-	var gen := GDScript.new()
-	gen.source_code = src
-	var err := gen.reload()
-	if err != OK:
-		push_error("Gdt.mock_singleton: failed to compile mock for '%s' (error %d)\nsource:\n%s" % [singleton_name, err, src])
+	var lifecycle := "func _ready() -> void: pass\n"
+	lifecycle += "func _enter_tree() -> void: pass\n"
+	lifecycle += "func _exit_tree() -> void: pass\n"
+	lifecycle += "func _process(_d: float) -> void: pass\n"
+	lifecycle += "func _physics_process(_d: float) -> void: pass\n\n"
+	var gen := _double_compile(_double_source(klass, false, lifecycle), "mock_singleton", singleton_name)
+	if gen == null:
 		return null
 	return gen.new() as Node
 
 # Creates a mock of `klass` (a GDScript resource, e.g. MyClass or load("...")).
 # Returns null and pushes an error if compilation fails.
 static func mock(klass: GDScript, auto_free: bool = true) -> Object:
-	var methods: Array = klass.get_script_method_list()
-	var extends_path: String = klass.resource_path
-
-	var src := ""
-	if extends_path != "":
-		src += 'extends "%s"\n\n' % extends_path
-	else:
-		src += "extends RefCounted\n\n"
-	src += "var __calls: Dictionary = {}\n"
-	src += "var __stubs: Dictionary = {}\n"
-	src += "var __stub_patterns: Array = []\n"
-	src += "var __call_log: Array = []\n\n"
-	src += "func __record(m: String, a: Array) -> Variant:\n"
-	src += "\tif not __calls.has(m): __calls[m] = []\n"
-	src += "\t__calls[m].append(a)\n"
-	src += "\t__call_log.append([m, a])\n"
-	src += '\tvar ka: String = str(m) + "|" + str(a)\n'
-	src += "\tif __stubs.has(ka): return __stubs[ka]\n"
-	src += "\tif __stubs.has(m): return __stubs[m]\n"
-	src += "\tfor p in __stub_patterns:\n"
-	src += '\t\tif p[0] == m and Gdt._args_match(a, p[1]): return p[2]\n'
-	src += "\treturn null\n\n"
-
-	for md in methods:
-		var name: String = md["name"]
-		# Skip lifecycle, private, and our internal methods.
-		if name.begins_with("_"):
-			continue
-		var arg_list: PackedStringArray = PackedStringArray()
-		for i in md.get("args", []).size():
-			arg_list.append("a%d" % i)
-		var arg_str: String = ", ".join(arg_list)
-		var arr_str: String = "[%s]" % ", ".join(arg_list) if arg_list.size() > 0 else "[]"
-		src += "func %s(%s):\n" % [name, arg_str]
-		src += '\treturn __record("%s", %s)\n\n' % [name, arr_str]
-
-	var gen := GDScript.new()
-	gen.source_code = src
-	var err := gen.reload()
-	if err != OK:
-		push_error("Gdt.mock: failed to compile double for '%s' (error %d)\nsource:\n%s" % [extends_path, err, src])
+	var gen := _double_compile(_double_source(klass, false), "mock", klass.resource_path)
+	if gen == null:
 		return null
 	var obj: Object = gen.new()
 	if auto_free:
@@ -1213,6 +1227,7 @@ static func stub(mock_obj: Object, method_name: String, value: Variant = null) -
 	if not mock_obj.has_method("__record"):
 		push_error("Gdt.stub: object is not a Gdt mock or spy")
 		return
+	_double_warn_if_void(mock_obj, method_name)
 	mock_obj.__stubs[method_name] = value
 
 # Set a return value for a specific call signature (args must match exactly).
@@ -1220,6 +1235,7 @@ static func stub_with_args(mock_obj: Object, method_name: String, args: Array, v
 	if not mock_obj.has_method("__record"):
 		push_error("Gdt.stub_with_args: object is not a Gdt mock or spy")
 		return
+	_double_warn_if_void(mock_obj, method_name)
 	var _has_matcher := false
 	for _a in args:
 		if _a is GdtMatcher:
@@ -1290,14 +1306,14 @@ static func assert_called_in_order(mock_obj: Object, method_names: Array, msg: S
 		[str(method_names), i, method_names.size(), method_names[i]]
 	return expect(false, m)
 
-# ── Message templating (internal) ─────────────────────────────────────────────
+# ── Message templating ─────────────────────────────────────────────
 
 # Substitutes {actual} and {expected} in a custom message string.
 # Falls back to the raw message when neither placeholder is present.
 static func _interpolate_msg(msg: String, actual: Variant, expected: Variant) -> String:
 	return msg.replace("{actual}", str(actual)).replace("{expected}", str(expected))
 
-# ── Collection failure diffs (internal) ──────────────────────────────────────
+# ── Collection failure diffs ──────────────────────────────────────
 
 static func _diff_message(actual: Variant, expected: Variant) -> String:
 	if actual is Array and expected is Array:
@@ -1334,7 +1350,7 @@ static func _dict_diff_msg(actual: Dictionary, expected: Dictionary) -> String:
 			lines.append("  %s: unexpected key (got %s)" % [str(key), str(actual[key])])
 	return "\n".join(lines)
 
-# ── Property / export assertions (internal) ───────────────────────────────────
+# ── Property / export assertions ───────────────────────────────────
 
 # Asserts that `obj` has an @export property named `prop_name` of Variant `type`.
 static func assert_exports(obj: Object, prop_name: String, type: int, msg: String = "") -> bool:
@@ -1414,7 +1430,7 @@ static func _check_property_with_range(obj: Object, prop_name: String, min_val: 
 			return float(parts[0]) == min_val and float(parts[1]) == max_val
 	return false
 
-# ── Sandbox / scenario testing (internal) ─────────────────────────────────────
+# ── Sandbox / scenario testing ─────────────────────────────────────
 #
 # Creates an isolated test world: a Node container added to the scene tree
 # with auto-cleanup after each test. Actors (Nodes) are spawned into it.
@@ -1433,7 +1449,7 @@ static func test_world() -> Object:
 		return null
 	return h.create_test_world()
 
-# ── Memory tracking + autoref scoping (internal) ──────────────────────────────
+# ── Memory tracking + autoref scoping ──────────────────────────────
 
 # Registers `obj` for automatic cleanup after the test. Nodes are freed (or
 # removed from tree); RefCounted refs are simply released; bare Objects are
@@ -1452,7 +1468,7 @@ static func current_heap_delta() -> int:
 		return 0
 	return h.current_heap_delta()
 
-# ── Push error / warning capture (internal) ───────────────────────────────────
+# ── Push error / warning capture ───────────────────────────────────
 #
 # Transparent capture of push_error() / push_warning() requires a GDExtension
 # hook not available in pure GDScript. Use Gdt.push_error() / Gdt.push_warning()
@@ -1513,7 +1529,7 @@ static func _check_no_push_error() -> bool:
 		return true
 	return h._captured_errors.is_empty()
 
-# ── Orphan node detection (internal) ──────────────────────────────────────────
+# ── Orphan node detection ──────────────────────────────────────────
 
 # Fails if any orphan nodes were created since before_each. Baseline is taken
 # automatically; call this anywhere inside a test body.
@@ -1523,7 +1539,7 @@ static func assert_no_new_orphans(msg: String = "") -> bool:
 		return true
 	return h.assert_no_new_orphans(msg)
 
-# ── Assert rewriting (internal) ───────────────────────────────────────────────
+# ── Assert rewriting ───────────────────────────────────────────────
 # Called by the assert rewriter in gdtest-analysis. Not for direct use.
 
 static func _rewrite_eq(lhs: Variant, rhs: Variant, expr: String, file: String, line: int) -> void:
@@ -1565,7 +1581,7 @@ static func _rewrite_true(cond: bool, expr: String, file: String, line: int) -> 
 		return
 	expect(false, "assert(%s)  (%s:%d)" % [expr, file, line])
 
-# ── Signal watchers (internal) ─────────────────────────────────────────────────
+# ── Signal watchers ─────────────────────────────────────────────────
 
 # Returns a SignalWatcher that records every emission of `signal_name` on `obj`.
 # Automatically disconnected after each test. Returns null on invalid signal.
@@ -1595,7 +1611,7 @@ static func watch_signal(obj: Object, signal_name: String) -> Object:
 		h.register_watcher_keyed(obj, signal_name, w)
 	return w
 
-# ── Signal order assertions (internal) ────────────────────────────────────────
+# ── Signal order assertions ────────────────────────────────────────
 
 # Pure-bool check: true if sig_a's first emission happened before sig_b's first.
 static func _check_emitted_before(obj_a: Object, sig_a: String, obj_b: Object, sig_b: String) -> bool:
@@ -1674,7 +1690,7 @@ static func assert_signal_order(steps: Array, msg: String = "") -> bool:
 		last_sig = sig
 	return true
 
-# ── Property-based testing (internal) ─────────────────────────────────────────
+# ── Property-based testing ─────────────────────────────────────────
 
 # Returns a generator that produces random integers in [min, max].
 static func gen_int(mn: int, mx: int) -> Object:
@@ -1749,7 +1765,7 @@ static func _repr_inputs(inputs: Array) -> String:
 		parts.append(str(v))
 	return "[" + ", ".join(parts) + "]"
 
-# ── Benchmark API (internal) ──────────────────────────────────────────────────
+# ── Benchmark API ──────────────────────────────────────────────────
 
 # Runs `callable` N times and returns a BenchResult with timing statistics.
 # Use inside bench_* test functions or any test_* that needs timing assertions.
@@ -1784,7 +1800,7 @@ static func assert_faster_than(result_a: Object, result_b: Object, factor: float
 		])
 	return true
 
-# ── Coverage tracking (internal) ───────────────────────────────────────────────
+# ── Coverage tracking ───────────────────────────────────────────────
 # When --coverage is active, instrumented source files call _cov_hit() for each
 # executed line. _cov_dump_file() is called by the worker before it exits.
 

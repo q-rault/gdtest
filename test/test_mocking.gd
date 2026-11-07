@@ -12,21 +12,26 @@ func test_stub_return_value() -> void:
 	stub(m, "get_hp", 42)
 	assert_eq(m.get_hp(), 42)
 
-func test_stub_default_returns_null() -> void:
+func test_unstubbed_method_returns_declared_types_zero_value() -> void:
 	var m = mock(HealthComponent)
-	assert_null(m.get_hp())
+	assert_eq(m.get_hp(), 0)
+	assert_eq(m.describe_hit(1), "")
+
+func test_unstubbed_untyped_method_returns_null() -> void:
+	var m = mock(HealthComponent)
+	assert_null(m.last_note())
 
 func test_stub_with_args_specific_call() -> void:
 	var m = mock(HealthComponent)
-	stub_with_args(m, "take_damage", [100], "heavy hit")
-	assert_eq(m.take_damage(100), "heavy hit")
+	stub_with_args(m, "describe_hit", [100], "heavy hit")
+	assert_eq(m.describe_hit(100), "heavy hit")
 
 func test_stub_with_args_falls_back_to_generic() -> void:
 	var m = mock(HealthComponent)
-	stub(m, "take_damage", "default")
-	stub_with_args(m, "take_damage", [100], "heavy")
-	assert_eq(m.take_damage(1), "default")
-	assert_eq(m.take_damage(100), "heavy")
+	stub(m, "describe_hit", "default")
+	stub_with_args(m, "describe_hit", [100], "heavy")
+	assert_eq(m.describe_hit(1), "default")
+	assert_eq(m.describe_hit(100), "heavy")
 
 func test_assert_not_called() -> void:
 	var m = mock(HealthComponent)

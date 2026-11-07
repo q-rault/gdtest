@@ -46,7 +46,14 @@ The workflow then:
 2. Bundles `gdtest`, `README.md`, `LICENSE-MIT`, `LICENSE-APACHE`, `addons/gdtest/`, and `addons/gdtest_editor/`.
 3. Creates a GitHub release with the archives attached.
 
-After the workflow finishes, verify `cargo install gdtest` still works and update any install docs if the artifact naming changes.
+The workflow does not publish to crates.io. After it finishes, publish the crates in dependency order:
+
+```sh
+cargo publish -p gdtest-analysis
+cargo publish -p gdtest
+```
+
+Then verify `cargo install gdtest` works.
 
 ## Failed release recovery
 

@@ -1,6 +1,6 @@
 extends Node
 
-# Test class that extends Node directly — verifies internal's branch
+# Test class that extends Node directly — verifies the branch
 # where the harness adds the test instance itself to the per-test
 # container so its `_ready()` runs.
 

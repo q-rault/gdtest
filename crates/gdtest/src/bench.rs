@@ -1,5 +1,5 @@
 //! Internal: run a fixed list of tests in a single persistent worker (M1.5
-//! benchmark). This is a stopgap until internal/70 land the real pool + MPSC
+//! benchmark). This is a stopgap kept separate from the real pool + MPSC
 //! dispatch. Output is one CSV line per test + a summary, so a bench script
 //! can consume the data without regex-ing a pretty report.
 

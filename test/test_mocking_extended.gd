@@ -98,9 +98,9 @@ func test_matcher_matching_no_match() -> void:
 
 func test_matcher_stub_with_args_uses_matcher() -> void:
 	var m = mock(HealthComponent)
-	stub_with_args(m, "take_damage", [Gdt.any_int()], "hit")
-	assert_eq(m.take_damage(1), "hit")
-	assert_eq(m.take_damage(999), "hit")
+	stub_with_args(m, "describe_hit", [Gdt.any_int()], "hit")
+	assert_eq(m.describe_hit(1), "hit")
+	assert_eq(m.describe_hit(999), "hit")
 
 # ── mock_singleton ────────────────────────────────────────────────────────
 
@@ -124,7 +124,7 @@ func test_mock_singleton_builtin_fails_gracefully() -> void:
 	# (This would push an error to Godot's console — expected behaviour)
 	pass
 
-# ── Ordered call verification (internal) ──────────────────────────────────
+# ── Ordered call verification ──────────────────────────────────
 
 func test_assert_called_in_order_passes() -> void:
 	var m = mock(HealthComponent)
@@ -164,7 +164,7 @@ func test_get_call_log_order() -> void:
 	assert_eq(log[1][0], "take_damage")
 	assert_eq(log[2][0], "get_hp")
 
-# ── Auto-cleanup (internal) ────────────────────────────────────────────────
+# ── Auto-cleanup ────────────────────────────────────────────────
 
 func test_mock_auto_free_false_stays_valid() -> void:
 	var m = mock(HealthComponent, false)

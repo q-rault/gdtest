@@ -16,7 +16,7 @@ mock(SomeClass) -> Object
 mock(load("res://path/to/script.gd")) -> Object
 ```
 
-Returns a runtime double of the given class. All public methods exist on the double but do nothing and return `null` by default. Use `stub` to override return values.
+Returns a runtime double of the given class. All public methods exist on the double but do nothing. Unstubbed methods return their declared type's zero value (`0`, `""`, `[]`, ...), or `null` for object and untyped methods. Use `stub` to override return values. Stubbed values must match the declared return type, and stubs on `void` methods have no effect.
 
 ```gdscript
 var ai = mock(EnemyAI)
@@ -34,7 +34,7 @@ stub_with_args(mock_obj, "method_name", [arg1, arg2], return_value)
 
 `stub` sets the default return value for a method regardless of arguments.
 
-`stub_with_args` sets the return value only when the method is called with arguments that exactly equal `[arg1, arg2]`. Calls with different arguments fall back to the plain `stub` value, or `null` if no plain stub is set.
+`stub_with_args` sets the return value only when the method is called with arguments that exactly equal `[arg1, arg2]`. Calls with different arguments fall back to the plain `stub` value, or the unstubbed default if no plain stub is set.
 
 ```gdscript
 stub(ai, "choose_action", "attack")

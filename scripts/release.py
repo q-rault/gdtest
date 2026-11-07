@@ -1,5 +1,6 @@
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 
@@ -9,15 +10,17 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
 def read(path: str) -> str:
-    return (ROOT / path).read_text()
+    return (ROOT / path).read_text(encoding="utf8")
 
 
 def replace(path: str, pattern: str, repl: str, *, flags: int = re.MULTILINE, count: int = 1) -> None:
     file_path = ROOT / path
-    text, changed = re.subn(pattern, repl, file_path.read_text(), count=count, flags=flags)
+    # Read and write without newline translation: the repo is LF on every platform.
+    original = file_path.read_bytes().decode("utf8").replace(chr(13), "")
+    text, changed = re.subn(pattern, repl, original, count=count, flags=flags)
     if changed < 1:
         raise SystemExit(f"ERROR: pattern not found in {path}")
-    file_path.write_text(text)
+    file_path.write_bytes(text.encode("utf8"))
     print(f"  {path}")
 
 
@@ -55,7 +58,6 @@ def check_version_sync() -> None:
     checks = [
         ("Cargo.toml#gdtest-analysis", re.search(r'^\s*gdtest-analysis\s*=\s*\{[^}]*version\s*=\s*"([^"]+)"', cargo_text, re.MULTILINE)),
         ("addons/gdtest/gdtest_worker.gd", re.search(r'^\s*const HARNESS_VERSION\s*:=\s*"([^"]+)"', read("addons/gdtest/gdtest_worker.gd"), re.MULTILINE)),
-        ("addons/gdtest/README.md", re.search(r'^# gdtest Runtime Addon .* version ([0-9A-Za-z.\-]+)', read("addons/gdtest/README.md"), re.MULTILINE)),
         ("vscode-gdtest/package.json", re.search(r'"version"\s*:\s*"([^"]+)"', read("vscode-gdtest/package.json"))),
         ("vscode-gdtest/package-lock.json", re.search(r'"version"\s*:\s*"([^"]+)"', read("vscode-gdtest/package-lock.json"))),
         (
@@ -78,13 +80,19 @@ def check_version_sync() -> None:
         raise SystemExit(1)
 
 
+def sync_assets() -> None:
+    """Copy addons/ into the gdtest crate, which embeds them for `gdtest init`."""
+    destination = ROOT / "crates/gdtest/assets/addons"
+    shutil.rmtree(destination, ignore_errors=True)
+    shutil.copytree(ROOT / "addons", destination)
+
+
 def bump(version: str) -> None:
     check_release_version(version)
     print(f"bumping to {version}")
     replace("Cargo.toml", r'^(version\s*=\s*)"[^"]+"', f'\\g<1>"{version}"')
     replace("Cargo.toml", r'^(gdtest-analysis\s*=\s*\{[^}]*version\s*=\s*)"[^"]+"', f'\\g<1>"{version}"')
     replace("addons/gdtest/gdtest_worker.gd", r'^(const HARNESS_VERSION\s*:=\s*)"[^"]+"', f'\\g<1>"{version}"')
-    replace("addons/gdtest/README.md", r'^(# gdtest Runtime Addon .* version )([0-9A-Za-z.\-]+)', f'\\g<1>{version}')
     replace("vscode-gdtest/package.json", r'("version"\s*:\s*)"[^"]+"', f'\\g<1>"{version}"')
     replace("vscode-gdtest/package-lock.json", r'("version"\s*:\s*)"[^"]+"', f'\\g<1>"{version}"')
     replace(
@@ -95,6 +103,7 @@ def bump(version: str) -> None:
     )
     replace("zed-gdtest/extension.toml", r'^(version\s*=\s*)"[^"]+"', f'\\g<1>"{version}"')
     replace("addons/gdtest_editor/plugin.cfg", r'^(version\s*=\s*)"[^"]+"', f'\\g<1>"{version}"')
+    sync_assets()
     print("done - run `just check-version-sync` before releasing")
 
 
@@ -108,6 +117,8 @@ def main(argv: list[str]) -> int:
         check_release_version(argv[2])
     elif command == "check-version-sync":
         check_version_sync()
+    elif command == "sync-assets":
+        sync_assets()
     elif command == "bump":
         bump(argv[2])
     else:

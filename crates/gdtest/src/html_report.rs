@@ -1,4 +1,4 @@
-//! HTML test report with history, flaky detection, and searchable output (internal).
+//! HTML test report with history, flaky detection, and searchable output.
 //!
 //! Generates a standalone HTML file (no CDN dependencies) after each run.
 //! History is stored in `.gdtest-history/` as JSON files — gitignore-able.
@@ -203,7 +203,7 @@ pub fn detect_flaky(history: &[RunRecord], window: usize) -> Vec<FlakyInfo> {
         })
         .collect();
 
-    flaky.sort_by(|a, b| b.flip_count.cmp(&a.flip_count));
+    flaky.sort_by_key(|f| std::cmp::Reverse(f.flip_count));
     flaky
 }
 
@@ -230,10 +230,10 @@ pub fn generate_report(
     out_path: &Path,
     opts: &ReportOptions,
 ) -> Result<()> {
-    if let Some(parent) = out_path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)?;
-        }
+    if let Some(parent) = out_path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
     }
     let html = build_html(current, history, opts);
     std::fs::write(out_path, html.as_bytes())

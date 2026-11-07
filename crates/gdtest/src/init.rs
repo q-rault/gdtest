@@ -13,7 +13,7 @@ macro_rules! asset {
     ($path:literal) => {
         Asset {
             rel_path: $path,
-            contents: include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../", $path)),
+            contents: include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/", $path)),
         }
     };
 }
@@ -74,7 +74,7 @@ pub fn run(opts: InitOptions) -> Result<()> {
         eprintln!("gdtest init: skipped Godot editor plugin (--no-editor)");
     }
     eprintln!(
-        "gdtest init: IDE extensions stay separate; install VS Code / Zed integrations from the release artifacts when needed"
+        "gdtest init: IDE extensions are separate: see vscode-gdtest/ and zed-gdtest/ in the repository"
     );
     if wrote == 0 {
         eprintln!("gdtest init: nothing changed");
@@ -181,6 +181,26 @@ mod tests {
         assert!(!dir.join("addons/gdtest_editor/plugin.gd").exists());
 
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// `assets/addons` is what ships to crates.io; `addons/` is what the
+    /// self-tests exercise. Run `just sync-assets` when this fails.
+    #[test]
+    fn embedded_assets_match_the_repo_addons() {
+        let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let addons = repo_root.join("addons");
+        if !addons.is_dir() {
+            return; // Built from the published crate, which has no repo root.
+        }
+        for asset in super::RUNTIME_ASSETS.iter().chain(super::EDITOR_ASSETS) {
+            let on_disk = fs::read_to_string(repo_root.join(asset.rel_path)).unwrap();
+            assert_eq!(
+                on_disk.replace("\r\n", "\n"),
+                asset.contents.replace("\r\n", "\n"),
+                "{} is out of date; run `just sync-assets`",
+                asset.rel_path
+            );
+        }
     }
 
     #[test]

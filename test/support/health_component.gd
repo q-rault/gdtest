@@ -13,3 +13,9 @@ func heal(amount: int) -> void:
 
 func is_dead() -> bool:
 	return _hp <= 0
+
+func describe_hit(amount: int) -> String:
+	return "hit for %d" % amount
+
+func last_note():
+	return null

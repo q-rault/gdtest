@@ -1,6 +1,6 @@
 extends GdTest
 
-# Tests for SceneRunner — input simulation helper (internal).
+# Tests for SceneRunner — input simulation helper.
 # Runs in headless Godot; Input.action_press/release work without a display.
 
 func _build_scene() -> PackedScene:
@@ -77,7 +77,7 @@ func test_simulate_mouse_move_does_not_crash() -> void:
 # ── GUI click ─────────────────────────────────────────────────────────────────
 
 func test_simulate_click_control_fires_pressed() -> void:
-	if OS.has_feature("headless"):
+	if DisplayServer.get_name() == "headless":
 		skip("simulate_click_control requires --display-mode windowed")
 		return
 	var packed: PackedScene = load("res://test/support/button_scene.tscn")

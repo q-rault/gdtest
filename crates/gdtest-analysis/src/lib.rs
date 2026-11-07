@@ -6,14 +6,14 @@
 //! 2. [`list_tests_in`] parses one GDScript file with tree-sitter-gdscript
 //!    and returns every `func test_*()` name in source order.
 //!
-//! Default patterns (internal):
+//! Default patterns:
 //!   - `test/**/*.gd`  — any `.gd` file inside a `test/` directory tree
 //!   - `**/*.test.gd`  — co-located test files anywhere in the project
 //!
 //! Users can override via `gdtest.toml`:  `include = ["test/**/*.gd", "**/*.test.gd"]`
 //!
 //! Target: discovering 500 tests across 50 files in <100 ms on a warm cache
-//! (internal success criterion).
+//!.
 
 /// Default discovery globs used when no `include` key is in `gdtest.toml`.
 pub const DEFAULT_PATTERNS: &[&str] = &["test/**/*.gd", "**/*.test.gd"];
@@ -162,15 +162,14 @@ fn seg_matches(pattern: &str, s: &str) -> bool {
 }
 
 /// If `path` contains a component named `describe_<Name>`, return that component name.
-/// Used to prefix test function names for directory-based sub-suites (internal).
+/// Used to prefix test function names for directory-based sub-suites.
 pub fn extract_describe_dir(path: &Path) -> Option<String> {
     path.components()
         .filter_map(|c| match c {
             std::path::Component::Normal(s) => s.to_str(),
             _ => None,
         })
-        .filter(|s| s.starts_with("describe_"))
-        .last()
+        .rfind(|s| s.starts_with("describe_"))
         .map(|s| s.to_string())
 }
 
@@ -205,7 +204,7 @@ pub struct TestEntry {
 ///
 /// If the file lives inside a `describe_<Name>/` directory, all returned
 /// entry names are prefixed with `describe_<Name>/` to match the reporting
-/// format of inner-class describe blocks (internal).
+/// format of inner-class describe blocks.
 pub fn list_test_entries_in(script_path: &Path) -> Result<Vec<TestEntry>> {
     let source =
         std::fs::read(script_path).with_context(|| format!("reading {}", script_path.display()))?;
@@ -250,29 +249,28 @@ fn parse_isolation_comment(text: &str) -> Option<IsolationDirective> {
     let doc_body = trimmed.strip_prefix("##").map(str::trim_start);
     let plain_body = trimmed.strip_prefix('#').map(str::trim_start);
 
-    if let Some(body) = doc_body {
-        if let Some(value) = body.strip_prefix("@isolation").map(str::trim) {
-            return match value {
-                "file" => Some(IsolationDirective::File),
-                "test" => Some(IsolationDirective::Test),
-                _ => None,
-            };
-        }
+    if let Some(body) = doc_body
+        && let Some(value) = body.strip_prefix("@isolation").map(str::trim)
+    {
+        return match value {
+            "file" => Some(IsolationDirective::File),
+            "test" => Some(IsolationDirective::Test),
+            _ => None,
+        };
     }
 
-    if let Some(body) = plain_body {
-        if let Some(value) = body
+    if let Some(body) = plain_body
+        && let Some(value) = body
             .strip_prefix("gdtest:")
             .map(str::trim_start)
             .and_then(|rest| rest.strip_prefix("isolation="))
             .map(str::trim)
-        {
-            return match value {
-                "file" => Some(IsolationDirective::File),
-                "test" => Some(IsolationDirective::Test),
-                _ => None,
-            };
-        }
+    {
+        return match value {
+            "file" => Some(IsolationDirective::File),
+            "test" => Some(IsolationDirective::Test),
+            _ => None,
+        };
     }
 
     None
@@ -365,43 +363,40 @@ fn collect_test_entries<'a>(
         };
         match child.kind() {
             "function_definition" => {
-                if let Some(name_node) = child.child_by_field_name("name") {
-                    if let Ok(fname) = name_node.utf8_text(source) {
-                        if let Some(kind) = classify_func(fname) {
-                            let name = match describe {
-                                Some(cls) => format!("{cls}/{fname}"),
-                                None => fname.to_string(),
-                            };
-                            let tags = extract_tags_preceding(source, child.start_position().row);
-                            let isolation =
-                                extract_isolation_preceding(source, child.start_position().row)
-                                    .or(file_isolation);
-                            out.push(TestEntry {
-                                name,
-                                kind,
-                                tags,
-                                isolation,
-                            });
-                        }
-                    }
+                if let Some(name_node) = child.child_by_field_name("name")
+                    && let Ok(fname) = name_node.utf8_text(source)
+                    && let Some(kind) = classify_func(fname)
+                {
+                    let name = match describe {
+                        Some(cls) => format!("{cls}/{fname}"),
+                        None => fname.to_string(),
+                    };
+                    let tags = extract_tags_preceding(source, child.start_position().row);
+                    let isolation = extract_isolation_preceding(source, child.start_position().row)
+                        .or(file_isolation);
+                    out.push(TestEntry {
+                        name,
+                        kind,
+                        tags,
+                        isolation,
+                    });
                 }
                 // Never descend into function bodies — no nested functions in GDScript.
             }
             "class_definition" if describe.is_none() => {
                 // Only look inside top-level `describe_*` inner classes.
-                if let Some(name_node) = child.child_by_field_name("name") {
-                    if let Ok(cname) = name_node.utf8_text(source) {
-                        if cname.starts_with("describe_") {
-                            out.extend(collect_test_entries(
-                                child,
-                                source,
-                                Some(cname),
-                                file_isolation,
-                            ));
-                        }
-                        // Non-describe inner classes are ignored entirely.
-                    }
+                if let Some(name_node) = child.child_by_field_name("name")
+                    && let Ok(cname) = name_node.utf8_text(source)
+                    && cname.starts_with("describe_")
+                {
+                    out.extend(collect_test_entries(
+                        child,
+                        source,
+                        Some(cname),
+                        file_isolation,
+                    ));
                 }
+                // Non-describe inner classes are ignored entirely.
             }
             _ => {
                 out.extend(collect_test_entries(

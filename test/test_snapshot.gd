@@ -1,6 +1,6 @@
 extends GdTest
 
-# Tests for assert_snapshot (internal).
+# Tests for assert_snapshot.
 # Snapshots are written to test/__snapshots__/test_snapshot/ on first run,
 # then compared on every subsequent run. Delete the directory to reset.
 

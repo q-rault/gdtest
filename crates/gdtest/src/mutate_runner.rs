@@ -1,4 +1,4 @@
-//! Mutation testing orchestration (internal).
+//! Mutation testing orchestration.
 //!
 //! For each mutation in a target GDScript file:
 //!   1. Backup original → write mutant in-place

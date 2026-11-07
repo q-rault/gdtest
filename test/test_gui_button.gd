@@ -38,7 +38,7 @@ func _make_button() -> Button:
 # ── Test A : click de base (push_input in_local_coords=true) ─────────────────
 
 func test_A_click_fires_pressed() -> void:
-	if OS.has_feature("headless"):
+	if DisplayServer.get_name() == "headless":
 		skip("require --display-mode windowed")
 		return
 
@@ -69,7 +69,7 @@ func test_A_click_fires_pressed() -> void:
 # ── Test B : keep_pressed_outside=true ───────────────────────────────────────
 
 func test_B_keep_pressed_outside() -> void:
-	if OS.has_feature("headless"):
+	if DisplayServer.get_name() == "headless":
 		skip("require --display-mode windowed")
 		return
 
@@ -95,7 +95,7 @@ func test_B_keep_pressed_outside() -> void:
 # ── Test C : motion puis press séparés avec await ────────────────────────────
 
 func test_C_motion_then_press_with_await() -> void:
-	if OS.has_feature("headless"):
+	if DisplayServer.get_name() == "headless":
 		skip("require --display-mode windowed")
 		return
 

@@ -20,8 +20,8 @@ Optional integrations:
 
 - Runtime harness: `gdtest init`
 - Editor plugin: installed by `gdtest init`; opt out with `gdtest init --no-editor`
-- VS Code: install the `vscode-gdtest-*.vsix` artifact from a release
-- Zed: use the extension in `zed-gdtest/` or the registry package
+- VS Code: build the extension from `vscode-gdtest/`
+- Zed: use the extension in `zed-gdtest/`
 
 More setup details live in the published docs: [Installation docs](https://gdtest.onrender.com/docs/installation).
 

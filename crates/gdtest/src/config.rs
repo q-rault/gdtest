@@ -1,4 +1,4 @@
-//! `gdtest.toml` — persistent config file (internal).
+//! `gdtest.toml` — persistent config file.
 //!
 //! Searched upward from the project root (like Cargo.toml). CLI flags and
 //! existing env vars always win. The effective priority is:
@@ -31,7 +31,7 @@ pub struct GdtestConfig {
     pub include_tags: Vec<String>,
     #[serde(default)]
     pub exclude_tags: Vec<String>,
-    /// Plugin scripts to load in the worker (internal).
+    /// Plugin scripts to load in the worker.
     /// Each entry is a `res://` path to a GDScript that extends
     /// `Gdt.GdtReporter` or `Gdt.GdtFixture`.
     /// Example: `["res://addons/my-plugin/reporter.gd"]`
@@ -109,6 +109,8 @@ impl GdtestConfig {
 
 // ── File loading ──────────────────────────────────────────────────────────────
 
+/// Walk up from `start` looking for `gdtest.toml`, stopping at the Godot project
+/// root so that an unrelated config in a parent directory is never picked up.
 fn find_config_file(start: &Path) -> Option<PathBuf> {
     let mut dir = start.to_path_buf();
     loop {
@@ -116,7 +118,7 @@ fn find_config_file(start: &Path) -> Option<PathBuf> {
         if candidate.exists() {
             return Some(candidate);
         }
-        if !dir.pop() {
+        if dir.join("project.godot").exists() || !dir.pop() {
             return None;
         }
     }
@@ -192,7 +194,24 @@ pub fn load_exclude(project_path: &str) -> Vec<String> {
 mod tests {
     use std::collections::HashMap;
 
-    use super::{GdtestConfig, ProfileConfig};
+    use super::{GdtestConfig, ProfileConfig, find_config_file};
+
+    #[test]
+    fn config_search_stops_at_the_project_root() {
+        let root = std::env::temp_dir().join(format!("gdtest-cfg-{}", std::process::id()));
+        let project = root.join("project");
+        let subdir = project.join("sub");
+        std::fs::create_dir_all(&subdir).unwrap();
+        std::fs::write(root.join("gdtest.toml"), "").unwrap();
+        std::fs::write(project.join("project.godot"), "").unwrap();
+
+        assert_eq!(find_config_file(&subdir), None);
+
+        std::fs::write(project.join("gdtest.toml"), "").unwrap();
+        assert_eq!(find_config_file(&subdir), Some(project.join("gdtest.toml")));
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn apply_profile_overlays_display_mode() {

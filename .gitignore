@@ -25,3 +25,6 @@ extension.wasm
 # Node
 node_modules/
 vscode-gdtest/out/
+
+# Local agent notes
+.ai/

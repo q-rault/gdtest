@@ -156,7 +156,7 @@ func assert_signal(node: Object, sig: String, timeout_ms: float = 1000.0, contex
 func assert_no_signal(node: Object, sig: String, timeout_ms: float = 200.0) -> void:
 	await Gdt.assert_no_signal(node, sig, timeout_ms)
 
-# ── Snapshot assertions (internal) ────────────────────────────────────────────
+# ── Snapshot assertions ────────────────────────────────────────────
 
 func assert_snapshot(actual: Variant, name: String = "") -> bool:
 	return Gdt.assert_snapshot(actual, name, get_script().resource_path)
@@ -205,14 +205,14 @@ func assert_called_in_order(mock_obj: Object, method_names: Array, msg: String =
 func assert_no_new_orphans(msg: String = "") -> bool:
 	return Gdt.assert_no_new_orphans(msg)
 
-# ── Push error / warning capture (internal) ────────────────────────────────────
+# ── Push error / warning capture ────────────────────────────────────
 
-# ── Sandbox / scenario testing (internal) ─────────────────────────────────────
+# ── Sandbox / scenario testing ─────────────────────────────────────
 
 func test_world() -> Object:
 	return Gdt.test_world()
 
-# ── Memory tracking + autoref scoping (internal) ──────────────────────────────
+# ── Memory tracking + autoref scoping ──────────────────────────────
 
 func autoref(obj: Object) -> Object:
 	return Gdt.autoref(obj)
@@ -220,7 +220,7 @@ func autoref(obj: Object) -> Object:
 func current_heap_delta() -> int:
 	return Gdt.current_heap_delta()
 
-# ── Property / export assertions (internal) ────────────────────────────────────
+# ── Property / export assertions ────────────────────────────────────
 
 func assert_exports(obj: Object, prop_name: String, type: int, msg: String = "") -> bool:
 	return Gdt.assert_exports(obj, prop_name, type, msg)
@@ -243,7 +243,7 @@ func assert_push_warning(text: String, msg: String = "") -> bool:
 func assert_no_push_error(msg: String = "") -> bool:
 	return Gdt.assert_no_push_error(msg)
 
-# ── Signal watchers (internal) ─────────────────────────────────────────────────
+# ── Signal watchers ─────────────────────────────────────────────────
 
 func watch_signal(obj: Object, signal_name: String) -> Object:
 	return Gdt.watch_signal(obj, signal_name)

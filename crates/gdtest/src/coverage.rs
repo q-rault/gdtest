@@ -1,4 +1,4 @@
-//! Coverage aggregation, LCOV generation, and terminal summary (internal).
+//! Coverage aggregation, LCOV generation, and terminal summary.
 //!
 //! Workers write `.gdtest_cov_<pid>.json` files in the project root when
 //! `--coverage` is active. This module collects those files, merges hit counts
@@ -77,11 +77,11 @@ pub fn collect_from_project(project_abs: &Path) -> Result<CoverageMap> {
 /// `lines_found` maps each file to its full set of instrumentable lines;
 /// lines present in `lines_found` but absent from `cov` are treated as DA=0.
 pub fn write_lcov(cov: &CoverageMap, lines_found: &LinesFound, out_path: &Path) -> Result<()> {
-    if let Some(parent) = out_path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("creating {}", parent.display()))?;
-        }
+    if let Some(parent) = out_path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating {}", parent.display()))?;
     }
     let mut f = std::io::BufWriter::new(
         std::fs::File::create(out_path)
@@ -203,10 +203,10 @@ pub fn print_summary(
         "Total", total_hit, total_found
     );
 
-    if let Some(min) = min_pct {
-        if total_pct < min {
-            anyhow::bail!("coverage {total_pct:.1}% is below minimum {min:.1}%");
-        }
+    if let Some(min) = min_pct
+        && total_pct < min
+    {
+        anyhow::bail!("coverage {total_pct:.1}% is below minimum {min:.1}%");
     }
     Ok(())
 }

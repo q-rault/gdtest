@@ -3,7 +3,7 @@
 //! All three consume the same `PoolEvent` stream from `pool.rs`. Pretty
 //! streams human-readable lines, TAP buffers and emits canonical TAP v14
 //! at the end, JSON streams one ndjson record per event for downstream
-//! tooling (custom CI scripts, the planned VSCode extension internal).
+//! tooling (custom CI scripts, editor extensions).
 
 use std::io::{self, Write};
 
@@ -625,10 +625,10 @@ impl JsonReporter {
                 line,
             }),
         };
-        if let Some(e) = mapped {
-            if let Ok(line) = serde_json::to_string(&e) {
-                self.write_line(&line);
-            }
+        if let Some(e) = mapped
+            && let Ok(line) = serde_json::to_string(&e)
+        {
+            self.write_line(&line);
         }
     }
 

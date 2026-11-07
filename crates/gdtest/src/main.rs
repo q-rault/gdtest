@@ -50,7 +50,7 @@ struct Cli {
     #[arg(long, value_enum, env = "GDTEST_ISOLATION", global = true)]
     isolation: Option<pool::IsolationMode>,
 
-    /// Only run tests whose `file :: func` form matches the regex. (internal)
+    /// Only run tests whose `file :: func` form matches the regex.
     #[arg(long)]
     filter: Option<String>,
 
@@ -118,12 +118,12 @@ struct Cli {
     update_snapshots: bool,
 
     /// Watch the project for `.gd` file changes and rerun the targets
-    /// after every change (internal). Initial run + watch loop until SIGINT.
+    /// after every change. Initial run + watch loop until SIGINT.
     #[arg(long)]
     watch: bool,
 
     /// Skip assert rewriting. By default, `assert(a == b)` calls are rewritten
-    /// to `Gdt._rewrite_eq(a, b, ...)` for rich failure diffs (internal).
+    /// to `Gdt._rewrite_eq(a, b, ...)` for rich failure diffs.
     /// Use this flag to run the original source without rewriting.
     #[arg(long)]
     no_rewrite: bool,
@@ -175,7 +175,7 @@ struct Cli {
     #[arg(long, value_name = "REF")]
     changed_since: Option<String>,
 
-    /// Run mutation testing on a GDScript source file (internal).
+    /// Run mutation testing on a GDScript source file.
     /// For each single-point mutation (operator/literal replacement), the test
     /// suite is re-run to check whether a test catches the change ("killed").
     /// Prints a mutation score at the end. Cannot be combined with --watch.
@@ -240,7 +240,7 @@ enum Subcmd {
         #[arg(long, value_delimiter = ',')]
         funcs: Vec<String>,
     },
-    /// Merge JUnit XML shards from CI matrix jobs into a single report (internal).
+    /// Merge JUnit XML shards from CI matrix jobs into a single report.
     ///
     /// Example:
     ///   gdtest aggregate shard-1.xml shard-2.xml shard-3.xml --output combined.xml
@@ -348,7 +348,7 @@ fn main() -> anyhow::Result<()> {
         None => {}
     }
 
-    // Default to scanning from cwd when no targets are given (internal).
+    // Default to scanning from cwd when no targets are given.
     let mut targets = cli.targets.clone();
     if targets.is_empty() {
         targets.push(".".to_string());
@@ -456,55 +456,55 @@ fn apply_config_defaults_from_data(
     matches: &ArgMatches,
     cfg: config::GdtestConfig,
 ) -> anyhow::Result<()> {
-    if can_apply_config(matches, "godot_exe") {
-        if let Some(v) = cfg.godot_exe {
-            cli.worker.godot_exe = Some(v);
-        }
+    if can_apply_config(matches, "godot_exe")
+        && let Some(v) = cfg.godot_exe
+    {
+        cli.worker.godot_exe = Some(v);
     }
-    if can_apply_config(matches, "jobs") {
-        if let Some(v) = cfg.jobs {
-            cli.jobs = Some(v);
-        }
+    if can_apply_config(matches, "jobs")
+        && let Some(v) = cfg.jobs
+    {
+        cli.jobs = Some(v);
     }
-    if can_apply_config(matches, "display_mode") {
-        if let Some(v) = cfg.display_mode {
-            cli.worker.display_mode = parse_value_enum("display_mode", &v)?;
-        }
+    if can_apply_config(matches, "display_mode")
+        && let Some(v) = cfg.display_mode
+    {
+        cli.worker.display_mode = parse_value_enum("display_mode", &v)?;
     }
-    if can_apply_config(matches, "reporter") {
-        if let Some(v) = cfg.reporter {
-            cli.reporter = Some(parse_value_enum("reporter", &v)?);
-        }
+    if can_apply_config(matches, "reporter")
+        && let Some(v) = cfg.reporter
+    {
+        cli.reporter = Some(parse_value_enum("reporter", &v)?);
     }
-    if can_apply_config(matches, "isolation") {
-        if let Some(v) = cfg.isolation {
-            cli.isolation = Some(parse_value_enum("isolation", &v)?);
-        }
+    if can_apply_config(matches, "isolation")
+        && let Some(v) = cfg.isolation
+    {
+        cli.isolation = Some(parse_value_enum("isolation", &v)?);
     }
-    if can_apply_config(matches, "timeout") {
-        if let Some(v) = cfg.timeout {
-            cli.timeout = Some(v);
-        }
+    if can_apply_config(matches, "timeout")
+        && let Some(v) = cfg.timeout
+    {
+        cli.timeout = Some(v);
     }
-    if can_apply_config(matches, "timeout_warn") {
-        if let Some(v) = cfg.timeout_warn {
-            cli.timeout_warn = Some(v);
-        }
+    if can_apply_config(matches, "timeout_warn")
+        && let Some(v) = cfg.timeout_warn
+    {
+        cli.timeout_warn = Some(v);
     }
-    if can_apply_config(matches, "fail_fast") {
-        if let Some(v) = cfg.fail_fast {
-            cli.fail_fast = v;
-        }
+    if can_apply_config(matches, "fail_fast")
+        && let Some(v) = cfg.fail_fast
+    {
+        cli.fail_fast = v;
     }
-    if can_apply_config(matches, "retries") {
-        if let Some(v) = cfg.retries {
-            cli.retries = Some(v);
-        }
+    if can_apply_config(matches, "retries")
+        && let Some(v) = cfg.retries
+    {
+        cli.retries = Some(v);
     }
-    if can_apply_config(matches, "harness") {
-        if let Some(v) = cfg.harness {
-            cli.worker.harness = v;
-        }
+    if can_apply_config(matches, "harness")
+        && let Some(v) = cfg.harness
+    {
+        cli.worker.harness = v;
     }
     if can_apply_config(matches, "tag") && !cfg.include_tags.is_empty() {
         cli.tag = cfg.include_tags;
@@ -565,6 +565,7 @@ fn effective_isolation(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_watch(
     targets: Vec<String>,
     filter: Option<String>,
@@ -1189,12 +1190,12 @@ fn get_changed_gd_files(project_abs: &Path, since_ref: Option<&str>) -> Vec<Stri
         cmd.arg(r);
     }
     cmd.arg("HEAD");
-    if let Ok(out) = cmd.output() {
-        if let Ok(text) = std::str::from_utf8(&out.stdout) {
-            for line in text.lines().filter(|l| l.ends_with(".gd")) {
-                if let Ok(rp) = gdtest_analysis::to_res_path(&project_abs.join(line), project_abs) {
-                    paths.push(rp);
-                }
+    if let Ok(out) = cmd.output()
+        && let Ok(text) = std::str::from_utf8(&out.stdout)
+    {
+        for line in text.lines().filter(|l| l.ends_with(".gd")) {
+            if let Ok(rp) = gdtest_analysis::to_res_path(&project_abs.join(line), project_abs) {
+                paths.push(rp);
             }
         }
     }
@@ -1207,14 +1208,12 @@ fn get_changed_gd_files(project_abs: &Path, since_ref: Option<&str>) -> Vec<Stri
             .arg("ls-files")
             .arg("--others")
             .arg("--exclude-standard");
-        if let Ok(out2) = cmd2.output() {
-            if let Ok(text2) = std::str::from_utf8(&out2.stdout) {
-                for line in text2.lines().filter(|l| l.ends_with(".gd")) {
-                    if let Ok(rp) =
-                        gdtest_analysis::to_res_path(&project_abs.join(line), project_abs)
-                    {
-                        paths.push(rp);
-                    }
+        if let Ok(out2) = cmd2.output()
+            && let Ok(text2) = std::str::from_utf8(&out2.stdout)
+        {
+            for line in text2.lines().filter(|l| l.ends_with(".gd")) {
+                if let Ok(rp) = gdtest_analysis::to_res_path(&project_abs.join(line), project_abs) {
+                    paths.push(rp);
                 }
             }
         }

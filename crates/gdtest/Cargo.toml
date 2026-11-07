@@ -11,13 +11,6 @@ description = "Fast external test runner for Godot 4 - Rust orchestrator + GDScr
 readme = "README.md"
 keywords = ["godot", "gdscript", "testing", "test-runner"]
 categories = ["command-line-utilities", "development-tools::testing"]
-exclude = [
-    # No need to ship benchmark fixtures or internal harness sources on crates.io.
-    "../../benchmarks/**",
-    "../../spike/**",
-    "../../test/**",
-    "../../.github/**",
-]
 
 [[bin]]
 name = "gdtest"

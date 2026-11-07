@@ -1,11 +1,11 @@
-//! `--watch` mode: re-run on `.gd` file changes (internal).
+//! `--watch` mode: re-run on `.gd` file changes.
 //!
 //! Selective rerun: when every changed path resolves to a known test
 //! file in the current target set, the rerun is narrowed to just those
 //! files (typical TDD case: edit one test, only that test re-runs). Any
 //! change to an unknown / non-test `.gd` file falls back to a full
 //! rerun — conservative because tests may `preload`/`load` it. A future
-//! pass (internal v1) will grep for `preload`/`load` references and only
+//! pass will grep for `preload`/`load` references and only
 //! invalidate the affected tests.
 //!
 //! Ctrl-C: the loop selects on `tokio::signal::ctrl_c()` alongside the
