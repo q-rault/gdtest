@@ -7,6 +7,26 @@ on:
   workflow_dispatch:
 
 jobs:
+  extensions:
+    name: Editor extensions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+      - name: VS Code extension
+        working-directory: vscode-gdtest
+        run: |
+          npm ci
+          npm test
+      - name: Zed extension
+        working-directory: zed-gdtest
+        run: cargo build --release --locked --target wasm32-wasip1
+
   test:
     name: ${{ matrix.os }} / Godot ${{ matrix.godot }}
     runs-on: ${{ matrix.os }}

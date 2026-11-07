@@ -66,7 +66,7 @@ jobs:
           cp "target/${{ matrix.target }}/release/gdtest" "${PACKAGE_DIR}/"
           cp -r addons/gdtest "${PACKAGE_DIR}/addons/"
           cp -r addons/gdtest_editor "${PACKAGE_DIR}/addons/"
-          cp README.md LICENSE-MIT LICENSE-APACHE "${PACKAGE_DIR}/"
+          cp README.md LICENSE-MIT LICENSE-APACHE LICENSE.md "${PACKAGE_DIR}/"
           tar czf "${ARCHIVE}" "${PACKAGE_DIR}"
           echo "ARCHIVE=${ARCHIVE}" >> "$GITHUB_ENV"
 
@@ -82,7 +82,7 @@ jobs:
           Copy-Item "target\${{ matrix.target }}\release\gdtest.exe" "$PackageDir\"
           Copy-Item "addons\gdtest" "$PackageDir\addons" -Recurse
           Copy-Item "addons\gdtest_editor" "$PackageDir\addons" -Recurse
-          Copy-Item "README.md","LICENSE-MIT","LICENSE-APACHE" $PackageDir
+          Copy-Item "README.md","LICENSE-MIT","LICENSE-APACHE","LICENSE.md" $PackageDir
           Compress-Archive -Path $PackageDir -DestinationPath $Archive
           "ARCHIVE=$Archive" | Out-File -FilePath $env:GITHUB_ENV -Append
 

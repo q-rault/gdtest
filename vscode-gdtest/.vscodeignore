@@ -5,4 +5,5 @@ tsconfig.json
 .eslintrc.json
 **/*.map
 **/*.ts
-!out/**
+out/*.test.js
+out/*.test.js.map

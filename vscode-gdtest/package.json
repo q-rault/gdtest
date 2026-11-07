@@ -4,7 +4,7 @@
   "description": "Run and view gdtest test results in VS Code",
   "version": "0.2.0",
   "publisher": "gdtest",
-  "repository": "https://github.com/gdtest/gdtest",
+  "repository": "https://github.com/q-rault/gdtest",
   "engines": {
     "vscode": "^1.75.0"
   },
@@ -60,7 +60,8 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "package": "tsc -p ./ && vsce package"
+    "package": "tsc -p ./ && vsce package",
+    "test": "tsc -p ./ && node --test out/results.test.js"
   },
   "devDependencies": {
     "@types/vscode": "^1.75.0",

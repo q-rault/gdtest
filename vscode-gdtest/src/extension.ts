@@ -1,24 +1,28 @@
 import * as vscode from 'vscode';
 import * as cp from 'child_process';
 import * as path from 'path';
+import {
+  GdtestEvent,
+  Outcome,
+  detailsOf,
+  formatUs,
+  outcomeOf,
+  parseEvent,
+  projectRelativePath,
+  testTarget,
+} from './results';
 
-const GDTEST_OUT_PREFIX = 'GDTEST_OUT:';
-const INSTALL_DOCS_URL = 'https://github.com/q-rault/gdtest/releases';
+const INSTALL_DOCS_URL = 'https://github.com/q-rault/gdtest#install';
 
-interface GdtestEvent {
-  event: string;
-  name: string;
-  us?: number;
-  failures?: string[];
-  message?: string;
+/** What other extensions, and this extension's tests, can use. */
+export interface GdtestApi {
+  runAll(): Promise<Map<string, Outcome>>;
 }
 
-export function activate(context: vscode.ExtensionContext): void {
+export function activate(context: vscode.ExtensionContext): GdtestApi {
   const outputChannel = vscode.window.createOutputChannel('gdtest');
-
   const controller = vscode.tests.createTestController('gdtest', 'gdtest');
-  context.subscriptions.push(controller);
-  context.subscriptions.push(outputChannel);
+  context.subscriptions.push(controller, outputChannel);
 
   const gdtestExe = vscode.workspace.getConfiguration('gdtest').get<string>('executablePath', 'gdtest');
   checkCli(gdtestExe).then((found) => {
@@ -32,34 +36,22 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   controller.refreshHandler = () => discoverTests(controller);
-  discoverTests(controller);
+  const discovered = discoverTests(controller);
 
-  // Watch for new test files
   const watcher = vscode.workspace.createFileSystemWatcher('**/test_*.gd');
   watcher.onDidCreate(() => discoverTests(controller));
   watcher.onDidDelete(() => discoverTests(controller));
   context.subscriptions.push(watcher);
 
-  // Run handler: streams gdtest output and maps to test items
   controller.createRunProfile(
     'Run',
     vscode.TestRunProfileKind.Run,
-    (request, token) => runTests(request, token, controller, outputChannel),
+    (request, token) => runTests(request, token, controller, outputChannel).then(() => undefined),
     true,
   );
 
-  // Commands
   context.subscriptions.push(
-    vscode.commands.registerCommand('gdtest.runAll', () => {
-      const req = new vscode.TestRunRequest();
-      controller.createRunProfile(
-        'Run',
-        vscode.TestRunProfileKind.Run,
-        (r, t) => runTests(r, t, controller, outputChannel),
-        true,
-      );
-      vscode.commands.executeCommand('testing.runAll');
-    }),
+    vscode.commands.registerCommand('gdtest.runAll', () => vscode.commands.executeCommand('testing.runAll')),
     vscode.commands.registerCommand('gdtest.runFile', () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor || !editor.document.fileName.endsWith('.gd')) {
@@ -69,28 +61,33 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.commands.executeCommand('testing.runCurrentFile');
     }),
   );
+
+  return {
+    runAll: async () => {
+      await discovered;
+      const source = new vscode.CancellationTokenSource();
+      return runTests(new vscode.TestRunRequest(), source.token, controller, outputChannel);
+    },
+  };
 }
 
-async function discoverTests(controller: vscode.TestController): Promise<void> {
-  const folders = vscode.workspace.workspaceFolders;
-  if (!folders) return;
+export function deactivate(): void {}
 
-  const testFiles = await vscode.workspace.findFiles('**/test_*.gd', '**/node_modules/**');
+async function discoverTests(controller: vscode.TestController): Promise<void> {
+  if (!vscode.workspace.workspaceFolders) return;
+  const testFiles = await vscode.workspace.findFiles('**/test_*.gd', '{**/node_modules/**,**/addons/**}');
   controller.items.replace(
-    testFiles.map((uri) => {
-      const item = controller.createTestItem(uri.toString(), path.basename(uri.fsPath), uri);
-      item.canResolveChildren = false;
-      return item;
-    }),
+    testFiles.map((uri) => controller.createTestItem(uri.toString(), path.basename(uri.fsPath), uri)),
   );
 }
 
-async function runTests(
+/** One run of the CLI. Resolves with the outcome of each test, by test item id. */
+function runTests(
   request: vscode.TestRunRequest,
   token: vscode.CancellationToken,
   controller: vscode.TestController,
   outputChannel: vscode.OutputChannel,
-): Promise<void> {
+): Promise<Map<string, Outcome>> {
   const config = vscode.workspace.getConfiguration('gdtest');
   const gdtestPath = config.get<string>('executablePath', 'gdtest');
   const godotExe = config.get<string>('godotExecutablePath', '');
@@ -101,109 +98,136 @@ async function runTests(
   outputChannel.clear();
   outputChannel.show(true);
 
-  const godotFlag = godotExe ? ['--godot-exe', godotExe] : [];
-
-  // Determine which files to run
-  const fileArgs: string[] =
+  const targets =
     request.include && request.include.length > 0
-      ? request.include.map((item) => path.relative(workspaceRoot, item.uri!.fsPath))
+      ? request.include.map((item) => {
+          const relative = path.relative(workspaceRoot, item.uri!.fsPath);
+          return testTarget(relative, item.parent ? item.label : undefined);
+        })
       : [testDir];
-  const args = [...godotFlag, ...fileArgs];
-
+  const godotFlag = godotExe ? ['--godot-exe', godotExe] : [];
+  const args = ['--reporter', 'json', ...godotFlag, ...targets];
   outputChannel.appendLine(`$ ${gdtestPath} ${args.join(' ')}\n`);
 
-  // Mark all requested items as running
-  const itemMap = new Map<string, vscode.TestItem>();
-  controller.items.forEach((item) => {
-    if (!request.include || request.include.includes(item)) {
-      run.started(item);
-      itemMap.set(path.basename(item.uri!.fsPath), item);
-    }
-  });
+  const outcomes = new Map<string, Outcome>();
+  const running = new Set<vscode.TestItem>();
 
-  await new Promise<void>((resolve) => {
-    if (token.isCancellationRequested) {
+  return new Promise((resolve) => {
+    const finish = () => {
+      // A test the CLI started but never reported on did not finish.
+      for (const item of running) {
+        run.errored(item, new vscode.TestMessage('gdtest ended before this test finished'));
+        outcomes.set(item.id, 'errored');
+      }
       run.end();
-      resolve();
+      resolve(outcomes);
+    };
+
+    if (token.isCancellationRequested) {
+      finish();
       return;
     }
 
     const proc = cp.spawn(gdtestPath, args, { cwd: workspaceRoot });
     let buffer = '';
-    let currentFileItem: vscode.TestItem | undefined;
 
     proc.stdout.on('data', (chunk: Buffer) => {
-      const text = chunk.toString();
-      buffer += text;
+      buffer += chunk.toString();
       const lines = buffer.split('\n');
       buffer = lines.pop() ?? '';
       for (const line of lines) {
-        if (line.startsWith(GDTEST_OUT_PREFIX)) {
-          try {
-            const ev: GdtestEvent = JSON.parse(line.slice(GDTEST_OUT_PREFIX.length));
-            processEvent(ev, run, itemMap, outputChannel, (item) => {
-              currentFileItem = item;
-            });
-          } catch {
-            // malformed JSON — ignore
-          }
+        const event = parseEvent(line);
+        if (event) {
+          applyEvent(event, controller, run, workspaceRoot, outputChannel, running, outcomes);
         }
       }
     });
-
-    proc.stderr.on('data', (chunk: Buffer) => {
-      outputChannel.appendLine(chunk.toString());
-    });
-
+    proc.stderr.on('data', (chunk: Buffer) => outputChannel.append(chunk.toString()));
     token.onCancellationRequested(() => proc.kill());
 
-    proc.on('close', () => {
-      run.end();
-      resolve();
+    // Without this, a missing executable would leave the run spinning forever.
+    proc.on('error', (error) => {
+      outputChannel.appendLine(`Could not run ${gdtestPath}: ${error.message}`);
+      finish();
     });
+    proc.on('close', finish);
   });
 }
 
-function processEvent(
-  ev: GdtestEvent,
+function applyEvent(
+  event: GdtestEvent,
+  controller: vscode.TestController,
   run: vscode.TestRun,
-  itemMap: Map<string, vscode.TestItem>,
+  workspaceRoot: string,
   outputChannel: vscode.OutputChannel,
-  onFileStart: (item: vscode.TestItem | undefined) => void,
+  running: Set<vscode.TestItem>,
+  outcomes: Map<string, Outcome>,
 ): void {
-  switch (ev.event) {
-    case 'file_start': {
-      const item = itemMap.get(path.basename(ev.name));
-      onFileStart(item);
-      if (item) run.started(item);
-      break;
-    }
-    case 'test_pass':
-      outputChannel.appendLine(`  ✓ ${ev.name} (${formatUs(ev.us ?? 0)})`);
-      break;
-    case 'test_fail': {
-      const msg = (ev.failures ?? []).join('\n');
-      outputChannel.appendLine(`  ✗ ${ev.name}`);
-      (ev.failures ?? []).forEach((f) => outputChannel.appendLine(`      → ${f}`));
-      // Record failure against the file item (individual test items not discovered pre-run)
-      const item = itemMap.get(ev.name.split('::')[0]?.split('/').pop() ?? '');
-      if (item) {
-        run.failed(item, new vscode.TestMessage(msg));
-      }
-      break;
-    }
-    case 'file_end': {
-      const item = itemMap.get(path.basename(ev.name));
-      if (item) run.passed(item);
-      break;
-    }
+  if (event.kind === 'summary') {
+    outputChannel.appendLine(
+      `\n${event.pass} passed, ${event.fail} failed, ${event.error} errored, ` +
+        `${event.pending} pending, ${event.skipped} skipped`,
+    );
+    return;
   }
+  if (!event.file || !event.name) return;
+
+  const item = testItemFor(event.file, event.name, controller, workspaceRoot);
+  if (event.kind === 'test_start') {
+    running.add(item);
+    run.started(item);
+    return;
+  }
+
+  const outcome = outcomeOf(event);
+  if (!outcome) return;
+  running.delete(item);
+  outcomes.set(item.id, outcome);
+
+  const duration = event.us !== undefined ? event.us / 1000 : undefined;
+  const details = detailsOf(event);
+  const message = new vscode.TestMessage(details.join('\n'));
+  switch (outcome) {
+    case 'passed':
+      outputChannel.appendLine(`  ✓ ${event.name} (${formatUs(event.us ?? 0)})`);
+      run.passed(item, duration);
+      break;
+    case 'failed':
+      outputChannel.appendLine(`  ✗ ${event.name}`);
+      run.failed(item, message, duration);
+      break;
+    case 'errored':
+      outputChannel.appendLine(`  ! ${event.name}`);
+      run.errored(item, message, duration);
+      break;
+    case 'skipped':
+      outputChannel.appendLine(`  - ${event.name} (skipped)`);
+      run.skipped(item);
+      break;
+  }
+  details.forEach((line) => outputChannel.appendLine(`      → ${line}`));
 }
 
-function formatUs(us: number): string {
-  if (us < 1000) return `${us} µs`;
-  if (us < 1_000_000) return `${(us / 1000).toFixed(2)} ms`;
-  return `${(us / 1_000_000).toFixed(2)} s`;
+/** The item for a test, creating it and its file's item as results come in. */
+function testItemFor(
+  file: string,
+  name: string,
+  controller: vscode.TestController,
+  workspaceRoot: string,
+): vscode.TestItem {
+  const uri = vscode.Uri.file(path.join(workspaceRoot, projectRelativePath(file)));
+  let fileItem = controller.items.get(uri.toString());
+  if (!fileItem) {
+    fileItem = controller.createTestItem(uri.toString(), path.basename(uri.fsPath), uri);
+    controller.items.add(fileItem);
+  }
+  const id = `${uri.toString()}::${name}`;
+  let item = fileItem.children.get(id);
+  if (!item) {
+    item = controller.createTestItem(id, name, uri);
+    fileItem.children.add(item);
+  }
+  return item;
 }
 
 function checkCli(gdtestPath: string): Promise<boolean> {
@@ -211,5 +235,3 @@ function checkCli(gdtestPath: string): Promise<boolean> {
     cp.execFile(gdtestPath, ['--version'], { timeout: 3000 }, (err) => resolve(!err));
   });
 }
-
-export function deactivate(): void {}
