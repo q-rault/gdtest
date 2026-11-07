@@ -20,9 +20,9 @@ as JSON events on stdout, prefixed with `GDTEST_OUT:`.
 ## Discovery
 
 Test discovery runs entirely in Rust using
-[tree-sitter-gdscript](https://crates.io/crates/tree-sitter-gdscript) — no
-Godot process needed. A directory walk finds `test_*.gd` files; tree-sitter
-parses each one and extracts every `func test_*()` declaration in &lt;1 ms per file.
+[gdsyntax](https://crates.io/crates/gdsyntax), a port of Godot's own GDScript
+parser — no Godot process needed. A directory walk finds `test_*.gd` files;
+gdsyntax parses each one and extracts every `func test_*()` declaration in &lt;1 ms per file.
 
 Discovery also handles:
 - `xtest_*` functions → marked as always-skip before workers start

@@ -753,7 +753,7 @@ async fn run_pool(
         }
     }
 
-    // Resolve file targets to res:// paths, then tree-sitter-discover each.
+    // Resolve file targets to res:// paths, then parse each to discover its tests.
     let patterns = config::load_include(&cfg.project_path);
     let exclude = config::load_exclude(&cfg.project_path);
     let mut files = gdtest_analysis::resolve(&file_targets, &project_abs, &patterns, &exclude)?;

@@ -3,7 +3,7 @@
 //! Two layers:
 //! 1. [`resolve`] turns user-supplied paths (files, directories, `res://…`)
 //!    into a flat list of `res://…` paths, filtered by discovery include/exclude globs.
-//! 2. [`list_tests_in`] parses one GDScript file with tree-sitter-gdscript
+//! 2. [`list_tests_in`] parses one GDScript file with gdsyntax
 //!    and returns every `func test_*()` name in source order.
 //!
 //! Default patterns:
@@ -37,7 +37,7 @@ pub use rewrite::{RewriteOutput, rewrite_file, rewrite_source};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
-use tree_sitter::Parser;
+use gdsyntax::ast::{AstNode, Member};
 use walkdir::WalkDir;
 
 /// Normalise every input path into a list of `res://…` test-file paths.
@@ -218,20 +218,19 @@ pub fn list_test_entries_in(script_path: &Path) -> Result<Vec<TestEntry>> {
 }
 
 pub fn list_test_entries_in_source(source: &[u8]) -> Result<Vec<TestEntry>> {
-    let mut parser = Parser::new();
-    parser
-        .set_language(&tree_sitter_gdscript::LANGUAGE.into())
-        .context("failed to set GDScript language")?;
-    let Some(tree) = parser.parse(source, None) else {
-        return Ok(Vec::new());
-    };
+    // Discovery works on lines, so replacing invalid UTF-8 cannot move them.
+    let tree = gdsyntax::parse(String::from_utf8_lossy(source));
     let file_isolation = extract_file_isolation(source);
-    Ok(collect_test_entries(
-        tree.root_node(),
+    let mut out = Vec::new();
+    collect_test_entries(
+        &tree,
+        tree.file().members(),
         source,
         None,
         file_isolation,
-    ))
+        &mut out,
+    );
+    Ok(out)
 }
 
 /// Parse a `## @tag <name>` doc comment. Returns the tag name or `None`.
@@ -348,67 +347,68 @@ fn classify_func(name: &str) -> Option<TestKind> {
     }
 }
 
-/// Recursively walk the AST to collect test entries.
+/// Collect test entries from the members of a file or of a `describe_*` class.
 /// `describe` is the name of the enclosing `describe_*` inner class, if any.
-fn collect_test_entries<'a>(
-    node: tree_sitter::Node<'a>,
+fn collect_test_entries(
+    tree: &gdsyntax::SyntaxTree,
+    members: impl Iterator<Item = Member>,
     source: &[u8],
     describe: Option<&str>,
     file_isolation: Option<IsolationDirective>,
-) -> Vec<TestEntry> {
-    let mut out = Vec::new();
-    for i in 0..node.child_count() {
-        let Some(child) = node.child(i as u32) else {
-            continue;
-        };
-        match child.kind() {
-            "function_definition" => {
-                if let Some(name_node) = child.child_by_field_name("name")
-                    && let Ok(fname) = name_node.utf8_text(source)
-                    && let Some(kind) = classify_func(fname)
-                {
-                    let name = match describe {
-                        Some(cls) => format!("{cls}/{fname}"),
-                        None => fname.to_string(),
-                    };
-                    let tags = extract_tags_preceding(source, child.start_position().row);
-                    let isolation = extract_isolation_preceding(source, child.start_position().row)
-                        .or(file_isolation);
-                    out.push(TestEntry {
-                        name,
-                        kind,
-                        tags,
-                        isolation,
-                    });
-                }
-                // Never descend into function bodies — no nested functions in GDScript.
+    out: &mut Vec<TestEntry>,
+) {
+    for member in members {
+        match member {
+            Member::Func(func) => {
+                let Some(name_token) = func.name() else {
+                    continue;
+                };
+                let fname = name_token.text();
+                let Some(kind) = classify_func(fname) else {
+                    continue;
+                };
+                let name = match describe {
+                    Some(cls) => format!("{cls}/{fname}"),
+                    None => fname.to_string(),
+                };
+                // The node starts at the function's first annotation, so tags
+                // and directives are read from the lines above it.
+                let row = tree
+                    .position(func.syntax().text_range().start().into())
+                    .line
+                    - 1;
+                let tags = extract_tags_preceding(source, row);
+                let isolation = extract_isolation_preceding(source, row).or(file_isolation);
+                out.push(TestEntry {
+                    name,
+                    kind,
+                    tags,
+                    isolation,
+                });
             }
-            "class_definition" if describe.is_none() => {
-                // Only look inside top-level `describe_*` inner classes.
-                if let Some(name_node) = child.child_by_field_name("name")
-                    && let Ok(cname) = name_node.utf8_text(source)
-                    && cname.starts_with("describe_")
+            // Only top-level `describe_*` inner classes hold tests; the worker
+            // instantiates them by name, so classes nested deeper are skipped.
+            Member::Class(class) if describe.is_none() => {
+                if let Some(name_token) = class.name()
+                    && name_token.text().starts_with("describe_")
                 {
-                    out.extend(collect_test_entries(
-                        child,
+                    let members: Vec<Member> = class
+                        .body()
+                        .map(|body| body.members().collect())
+                        .unwrap_or_default();
+                    collect_test_entries(
+                        tree,
+                        members.into_iter(),
                         source,
-                        Some(cname),
+                        Some(name_token.text()),
                         file_isolation,
-                    ));
+                        out,
+                    );
                 }
-                // Non-describe inner classes are ignored entirely.
             }
-            _ => {
-                out.extend(collect_test_entries(
-                    child,
-                    source,
-                    describe,
-                    file_isolation,
-                ));
-            }
+            _ => {}
         }
     }
-    out
 }
 
 /// Convenience wrapper: returns the names of tests that would actually run
@@ -629,6 +629,48 @@ class IgnoredClass:
             ]
         );
         assert!(entries.iter().all(|e| e.kind == TestKind::Normal));
+    }
+
+    #[test]
+    fn discovers_non_ascii_test_names() {
+        let src = "func test_日本語() -> void:\n\tpass\n".as_bytes();
+        let entries = list_test_entries_in_source(src).unwrap();
+        assert_eq!(entries[0].name, "test_日本語");
+    }
+
+    #[test]
+    fn reads_tags_above_annotations() {
+        let src = br#"
+## @tag slow
+@warning_ignore("unused_variable")
+func test_annotated() -> void:
+    var x := 1
+"#;
+        let entries = list_test_entries_in_source(src).unwrap();
+        assert_eq!(entries[0].tags, vec!["slow"]);
+    }
+
+    #[test]
+    fn finds_tests_after_a_syntax_error() {
+        let src = b"func broken(:\n\tpass\n\nfunc test_after() -> void:\n\tpass\n";
+        let entries = list_test_entries_in_source(src).unwrap();
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, vec!["test_after"]);
+    }
+
+    #[test]
+    fn skips_classes_nested_in_describe_classes() {
+        let src = br#"
+class describe_Outer:
+    func test_outer() -> void:
+        pass
+    class describe_Inner:
+        func test_inner() -> void:
+            pass
+"#;
+        let entries = list_test_entries_in_source(src).unwrap();
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, vec!["describe_Outer/test_outer"]);
     }
 
     // ── glob_match tests ──────────────────────────────────────────────────────

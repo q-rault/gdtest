@@ -4,7 +4,7 @@
 
 It provides:
 
-- Tree-sitter-based discovery of `test_*` and `bench_*` functions
+- Discovery of `test_*` and `bench_*` functions, using the [gdsyntax](https://crates.io/crates/gdsyntax) GDScript parser
 - Test-file walking and path pattern support
 - Dependency and coverage-oriented source analysis
 - Source rewriting used by GUT and gdUnit4 migration flows
