@@ -56,6 +56,10 @@ jobs:
           esac
           chmod +x "$exe" || true
           echo "GODOT_EXE=$exe" >> "$GITHUB_ENV"
+      - name: Hide build output from Godot
+        # target/package holds copies of the addons, whose class names would clash.
+        shell: bash
+        run: touch target/.gdignore
       - name: Import project
         shell: bash
         run: |
