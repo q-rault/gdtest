@@ -1,6 +1,6 @@
 # gdtest Runtime Addon
 
-Copy this folder into your Godot project as `addons/gdtest/`. Use the release archive that **matches your `gdtest` CLI version** (requires the gdtest executable; tested on Godot 4.6 and 4.7).
+Copy this folder into your Godot project as `addons/gdtest/`. Use the release archive that **matches your `gdtest` CLI version** (requires the gdtest executable; Godot 4.5+, tested on 4.6 and 4.7).
 
 This addon is the runtime side of gdtest. The Rust CLI discovers tests and manages workers; the scripts in this folder execute those tests inside Godot.
 

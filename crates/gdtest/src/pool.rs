@@ -7,10 +7,10 @@
 //!
 //! Per-test crash correlation:
 //! - Each submit is followed by exactly one result event (TestPass /
-//!   TestFail / TestError), preceded by a TestStart. Between TestStart
-//!   and the result we buffer stderr `SCRIPT ERROR` lines and escalate
-//!   a silent-pass to TestError when the test completed without failing
-//!   any expect() but still logged a runtime error.
+//!   TestFail / TestError), preceded by a TestStart. The worker reports
+//!   script errors in the result itself. Where stderr can be captured, we
+//!   also buffer its `SCRIPT ERROR` lines between TestStart and the result,
+//!   which adds context to the failures and to worker crashes.
 //! - A mid-test worker crash (stdout close) is attributed to the
 //!   in-flight test and the queue item is retried on a fresh worker.
 

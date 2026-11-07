@@ -107,8 +107,8 @@ impl Worker {
         #[cfg(windows)]
         let stderr_rx = {
             // Godot 4.6.x on Windows crashes very early when stderr is redirected
-            // to a pipe. Inherit stderr instead of capturing it so the worker stays
-            // alive; the downside is we lose programmatic stderr correlation.
+            // to a pipe, so stderr is inherited. Test results do not depend on it:
+            // the worker detects script errors itself through its logger.
             let (_tx, rx) = mpsc::unbounded_channel::<String>();
             rx
         };

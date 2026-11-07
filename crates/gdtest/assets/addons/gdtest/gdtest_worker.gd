@@ -16,6 +16,41 @@ extends SceneTree
 # Protocol reference: crates/gdtest/src/protocol.rs.
 
 const OUT_PREFIX := "GDTEST_OUT:"
+
+# Records script errors, such as a null dereference, as Godot reports them. A
+# script error aborts the running function without failing any assertion, so a
+# test that hits one would otherwise look like it passed. Observing them in
+# process works the same on every platform, unlike correlating stderr from the
+# CLI. Godot may log from any thread, hence the mutex.
+class ScriptErrorLogger extends Logger:
+	var _mutex := Mutex.new()
+	var _errors: Array[String] = []
+
+	func _log_error(
+		function: String,
+		file: String,
+		line: int,
+		code: String,
+		rationale: String,
+		_editor_notify: bool,
+		error_type: int,
+		_script_backtrace: Array[ScriptBacktrace]
+	) -> void:
+		if error_type != ERROR_TYPE_SCRIPT:
+			return
+		var message := rationale if rationale != "" else code
+		_mutex.lock()
+		_errors.append("%s (%s:%d in %s)" % [message, file, line, function])
+		_mutex.unlock()
+
+	func take_errors() -> Array[String]:
+		_mutex.lock()
+		var errors := _errors
+		_errors = []
+		_mutex.unlock()
+		return errors
+
+var _script_error_logger := ScriptErrorLogger.new()
 const HARNESS_VERSION := "0.2.0"
 
 var _current_failures: Array[String] = []
@@ -92,6 +127,7 @@ class TestWorldImpl extends RefCounted:
 		await _harness_ref.simulate_process_frame()
 
 func _init() -> void:
+	OS.add_logger(_script_error_logger)
 	Engine.set_meta("gdt_harness", self)
 	load("res://addons/gdtest/gdunit4_chain.gd")
 	load("res://addons/gdtest/gdunit4_compat.gd")
@@ -1029,6 +1065,25 @@ func _fixture_after_each() -> void:
 	for fp in _fixture_plugins:
 		fp.after_each()
 
+# A test's result must account for the script errors raised since it started.
+func _with_script_errors(obj: Dictionary) -> Dictionary:
+	match obj.get("event"):
+		"test_start":
+			_script_error_logger.take_errors()
+		"test_pass":
+			var errors := _script_error_logger.take_errors()
+			if not errors.is_empty():
+				return {
+					"event": "test_error",
+					"name": obj["name"],
+					"message": "script error: %s" % " | ".join(errors),
+				}
+		"test_fail":
+			for error in _script_error_logger.take_errors():
+				obj["failures"].append("script error: %s" % error)
+	return obj
+
 func _send(obj: Dictionary) -> void:
+	obj = _with_script_errors(obj)
 	_notify_reporters(obj)
 	print(OUT_PREFIX + JSON.stringify(obj))

@@ -36,7 +36,10 @@ skip() { echo "skip   - $1"; SKIP=$(( SKIP + 1 )); }
 
 run_grep() {
     local label="$1"; local pattern="$2"; shift 2
-    if "$@" 2>&1 | grep -qE "$pattern"; then
+    # Capture first: the command's own exit status must not affect the match.
+    local output
+    output="$("$@" 2>&1 || true)"
+    if grep -qE "$pattern" <<< "$output"; then
         ok "$label"
     else
         fail "$label"
@@ -152,6 +155,19 @@ if "$GDTEST" "$FIXTURES/fail_fast.gd" --fail-fast --reporter tap 2>&1 | grep -qE
 else
     ok "--fail-fast stops after first failure"
 fi
+
+# A test that aborts on a runtime error must never be reported as passing.
+run_exit_nonzero "a SCRIPT ERROR after a passing assert fails the run" \
+    "$GDTEST" "$FIXTURES/xtest_script_error.gd" --reporter tap
+
+run_grep "a SCRIPT ERROR is reported with the test" "not ok.*test_script_error_after_passing_assert" \
+    "$GDTEST" "$FIXTURES/xtest_script_error.gd" --reporter tap
+
+run_grep "a SCRIPT ERROR names its location" "script error: .*xtest_script_error.gd:[0-9]+" \
+    "$GDTEST" "$FIXTURES/xtest_script_error.gd" --reporter tap
+
+run_grep "a SCRIPT ERROR is added to an existing failure" "script error: " \
+    "$GDTEST" "$FIXTURES/xtest_script_error_after_failure.gd" --reporter tap
 
 # --reporter junit
 run_grep "--reporter junit produces XML" "<testsuites" \
