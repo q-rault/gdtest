@@ -72,17 +72,9 @@ SUMMARY: gdtest vs gdunit4 - both ran 61 tests - gdtest is 1.88x faster (13.0s v
 
 The `SUMMARY:` lines are grep-friendly for CI log parsing.
 
-## Categories
+## Choosing tests
 
-| Category | Files | Tests | Isolation |
-| --- | --- | --- | --- |
-| `pure-logic` | `test_armure_mr.gd` | 16 | file |
-| `scene` | `test_minions.gd`, `test_abilities_matrix.gd` | 6 | file |
-| `physics` | `test_auto_attack.gd` | 5 | file |
-| `isolation` | `test_economie_or.gd`, `test_respawn_timer_de_mort.gd` | 34 | test |
-| `all` | all of the above | 61 | mixed |
-
-Physics-heavy categories are bounded by real-time simulation; speedup there comes from parallelism (`-j N`), not startup amortization.
+Pass `--manifest /path/to/bench.manifest` to benchmark your own project's tests. The `--category` presets in `bench.sh` name files from a specific test suite and only work on a project that has them.
 
 ## Saved results
 
