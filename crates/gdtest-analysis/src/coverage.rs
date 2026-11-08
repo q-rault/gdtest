@@ -12,7 +12,6 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use gdsyntax::ast::{AstNode, Func};
-use gdsyntax::{SyntaxKind, SyntaxNode, SyntaxToken};
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -68,53 +67,31 @@ fn leading_whitespace(line: &str) -> &str {
 
 /// Returns all 1-based line numbers that lie inside some function body.
 ///
-/// A body runs from the line after the `func` keyword (or, for a multi-line
-/// signature, from its first statement) to the function's last token. A body
-/// on the header line, as in `func f(): pass`, has no lines.
+/// A body runs from the line after the signature to the body's last line of
+/// code. A body on the signature's line, as in `func f(): pass`, has no lines.
 fn find_function_body_lines(source: &[u8]) -> HashSet<u32> {
+    // Offsets must index into `source`, so invalid UTF-8 is not instrumented.
     let Ok(text) = std::str::from_utf8(source) else {
         return HashSet::new();
     };
     let tree = gdsyntax::parse(text);
-    let line_of = |token: &SyntaxToken| tree.position(token.text_range().start().into()).line;
+    let line_of = |offset: gdsyntax::rowan::TextSize| tree.position(offset.into()).line;
     let mut lines = HashSet::new();
     // Inner-class methods are FUNC nodes too; lambdas are not.
     for func in tree.root().descendants().filter_map(Func::cast) {
-        let header = func
-            .syntax()
-            .children_with_tokens()
-            .filter_map(|element| element.into_token())
-            .find(|token| token.kind() == SyntaxKind::FUNC_KW);
-        let (Some(header), Some(body)) = (header, func.body()) else {
-            continue;
-        };
-        let (Some(first), Some(last)) = (
-            significant_tokens(body.syntax()).next(),
-            significant_tokens(func.syntax()).last(),
+        let (Some(signature), Some(body)) = (
+            func.signature_range(),
+            func.body().and_then(|body| body.code_range()),
         ) else {
             continue;
         };
-        let start = line_of(&first).max(line_of(&header) + 1);
+        let start = line_of(body.start()).max(line_of(signature.end()) + 1);
         // The last token can span lines, as a multi-line string does.
-        let end = tree.position(last.text_range().end().into()).line;
-        for line in start..=end {
+        for line in start..=line_of(body.end()) {
             lines.insert(line as u32);
         }
     }
     lines
-}
-
-/// The tokens of `node` that are code: no trivia, line ends or indentation.
-fn significant_tokens(node: &SyntaxNode) -> impl Iterator<Item = SyntaxToken> {
-    node.descendants_with_tokens()
-        .filter_map(|element| element.into_token())
-        .filter(|token| {
-            !token.kind().is_trivia()
-                && !matches!(
-                    token.kind(),
-                    SyntaxKind::NEWLINE | SyntaxKind::INDENT | SyntaxKind::DEDENT
-                )
-        })
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

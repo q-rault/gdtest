@@ -147,19 +147,14 @@ fn find_asserts(source: &[u8]) -> Option<Vec<AssertInfo>> {
 
 /// Returns Some if this is a complete, single-line `assert(...)`.
 fn parse_assert(tree: &gdsyntax::SyntaxTree, stmt: &AssertStmt) -> Option<AssertInfo> {
-    let keyword = stmt
-        .syntax()
-        .children_with_tokens()
-        .filter_map(|element| element.into_token())
-        .find(|token| token.kind() == SyntaxKind::ASSERT_KW)?;
     let args = stmt.arguments()?;
     // An unclosed argument list is a syntax error; leave it alone.
-    let close = args.syntax().last_token()?;
-    if close.kind() != SyntaxKind::PARENTHESIS_CLOSE {
+    if args.syntax().last_token()?.kind() != SyntaxKind::PARENTHESIS_CLOSE {
         return None;
     }
-    let start_byte: usize = keyword.text_range().start().into();
-    let end_byte: usize = close.text_range().end().into();
+    // From `assert` (after any annotation) to `)`; a comment after it is not code.
+    let start_byte: usize = stmt.assert_token()?.text_range().start().into();
+    let end_byte: usize = args.code_range()?.end().into();
 
     // Only rewrite single-line asserts.
     let line = tree.position(start_byte).line;
@@ -167,8 +162,8 @@ fn parse_assert(tree: &gdsyntax::SyntaxTree, stmt: &AssertStmt) -> Option<Assert
         return None;
     }
 
-    // The first argument is the condition; the message is ignored.
-    let condition = args.arguments().next()?;
+    // The message is not needed: the rewritten call reports the condition.
+    let condition = stmt.condition()?;
     let binary = match &condition {
         Expr::Binary(binary) => (|| {
             Some(BinaryInfo {
@@ -189,9 +184,11 @@ fn parse_assert(tree: &gdsyntax::SyntaxTree, stmt: &AssertStmt) -> Option<Assert
     })
 }
 
-/// The source text of a node, without surrounding whitespace or comments.
+/// The source text of a node's code, without surrounding whitespace or comments.
 fn node_text(tree: &gdsyntax::SyntaxTree, node: &gdsyntax::SyntaxNode) -> String {
-    tree.source()[node.text_range()].trim().to_string()
+    gdsyntax::ast::code_range(node)
+        .map(|range| tree.source()[range].to_string())
+        .unwrap_or_default()
 }
 
 // ── Code generation ───────────────────────────────────────────────────────────
@@ -350,6 +347,13 @@ mod tests {
             s.contains("\tGdt._rewrite_eq(a, b, \"a == b\", \"res://test.gd\", 2)  # note\n"),
             "{s}"
         );
+    }
+
+    #[test]
+    fn rewrites_annotated_asserts() {
+        let src = b"func test_foo():\n\t@warning_ignore(\"assert_always_true\")\n\tassert(true)\n";
+        let out = rewrite_source(src, "res://test.gd");
+        assert!(out.changed);
     }
 
     #[test]

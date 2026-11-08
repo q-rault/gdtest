@@ -218,8 +218,9 @@ pub fn list_test_entries_in(script_path: &Path) -> Result<Vec<TestEntry>> {
 }
 
 pub fn list_test_entries_in_source(source: &[u8]) -> Result<Vec<TestEntry>> {
-    // Discovery works on lines, so replacing invalid UTF-8 cannot move them.
-    let tree = gdsyntax::parse(String::from_utf8_lossy(source));
+    // Discovery works on lines, which invalid UTF-8 replaced by gdsyntax
+    // cannot move.
+    let tree = gdsyntax::parse_bytes(source);
     let file_isolation = extract_file_isolation(source);
     let mut out = Vec::new();
     collect_test_entries(
