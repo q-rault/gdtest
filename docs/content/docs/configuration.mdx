@@ -1,16 +1,29 @@
 ---
 title: Configuration
-description: gdtest.toml reference — persistent config with profile support.
+description: gdtest's settings, in gdsuite.toml or gdtest.toml, with profile support.
 ---
 
+## Where settings live
+
+gdtest reads its settings from one of two places, with the same keys:
+
+- the `[test]` section of `gdsuite.toml`, for a project that uses
+  [gdsuite](https://github.com/q-rault/gdsuite) and keeps every tool's settings
+  in one file;
+- `gdtest.toml`, for a project that uses gdtest alone.
+
+Place the file at your Godot project root (next to `project.godot`). gdtest
+looks in the folder it runs from, then in its parents, and stops at the Godot
+project root. gdtest reads the same file whether it is started by
+`gdsuite test`, from a terminal, or from the editor panel.
+
+**Keep gdtest's settings in one file.** When `gdsuite.toml` has a `[test]`
+section, a `gdtest.toml` next to it is ignored, with a warning: the two files
+are not merged.
+
+Priority order: **CLI flag > env var > config file > built-in default**
+
 ## gdtest.toml
-
-Place `gdtest.toml` at your Godot project root (next to `project.godot`).
-gdtest searches for the file starting at your project root and walking up to
-parent directories — so you can place it at the top of a monorepo and have it
-apply to all sub-projects.
-
-Priority order: **CLI flag > env var > gdtest.toml > built-in default**
 
 For `godot_exe`, the built-in default is now auto-discovery of a compatible Godot 4 binary from common command names and common install locations.
 
@@ -75,3 +88,18 @@ Every setting has a corresponding env var that can substitute for a CLI flag:
 ```
 
 JUnit XML integrates with GitHub's test reporter when piped to a file.
+
+## In gdsuite.toml
+
+Every key above goes under `[test]`, and profiles under `[test.profile.<name>]`:
+
+```toml
+# gdsuite.toml
+[test]
+harness = "addons/gdtest/gdtest_worker.gd"
+exclude = ["test/helpers/**", "test/mocks/**"]
+
+[test.profile.ci]
+reporter = "junit"
+fail_fast = true
+```
