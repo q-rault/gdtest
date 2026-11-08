@@ -51,7 +51,7 @@ class ScriptErrorLogger extends Logger:
 		return errors
 
 var _script_error_logger := ScriptErrorLogger.new()
-const HARNESS_VERSION := "0.2.0"
+const HARNESS_VERSION := "0.2.1"
 
 var _current_failures: Array[String] = []
 var _pending_msg: String = ""
