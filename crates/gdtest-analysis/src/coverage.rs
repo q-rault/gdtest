@@ -1,7 +1,7 @@
 //! GDScript coverage instrumentation.
 //!
 //! Inserts `Gdt._cov_hit("res://path", line)` before each executable line
-//! inside function bodies. Uses tree-sitter to identify function body line
+//! inside function bodies. Uses gdsyntax to identify function body line
 //! ranges; blank lines and comment lines are skipped via text heuristics.
 //!
 //! The caller is responsible for backing up original files before writing the
@@ -11,7 +11,7 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use tree_sitter::Parser;
+use gdsyntax::ast::{AstNode, Func};
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -66,57 +66,32 @@ fn leading_whitespace(line: &str) -> &str {
 }
 
 /// Returns all 1-based line numbers that lie inside some function body.
+///
+/// A body runs from the line after the signature to the body's last line of
+/// code. A body on the signature's line, as in `func f(): pass`, has no lines.
 fn find_function_body_lines(source: &[u8]) -> HashSet<u32> {
-    let mut parser = Parser::new();
-    if parser
-        .set_language(&tree_sitter_gdscript::LANGUAGE.into())
-        .is_err()
-    {
-        return HashSet::new();
-    }
-    let Some(tree) = parser.parse(source, None) else {
+    // Offsets must index into `source`, so invalid UTF-8 is not instrumented.
+    let Ok(text) = std::str::from_utf8(source) else {
         return HashSet::new();
     };
+    let tree = gdsyntax::parse(text);
+    let line_of = |offset: gdsyntax::rowan::TextSize| tree.position(offset.into()).line;
     let mut lines = HashSet::new();
-    collect_body_lines(tree.root_node(), &mut lines);
+    // Inner-class methods are FUNC nodes too; lambdas are not.
+    for func in tree.root().descendants().filter_map(Func::cast) {
+        let (Some(signature), Some(body)) = (
+            func.signature_range(),
+            func.body().and_then(|body| body.code_range()),
+        ) else {
+            continue;
+        };
+        let start = line_of(body.start()).max(line_of(signature.end()) + 1);
+        // The last token can span lines, as a multi-line string does.
+        for line in start..=line_of(body.end()) {
+            lines.insert(line as u32);
+        }
+    }
     lines
-}
-
-fn collect_body_lines(node: tree_sitter::Node, lines: &mut HashSet<u32>) {
-    if node.kind() == "function_definition" {
-        let func_start_row = node.start_position().row as u32; // 0-based
-        let func_end_row = node.end_position().row as u32;
-
-        // Find the explicit 'body' child to get the precise body start row.
-        // Look for explicit 'body' child to get the precise body start.
-        // In tree-sitter-gdscript the body node begins on the same row as the
-        // `func` keyword, so only use it when strictly after the header row
-        // (multi-line signatures). For single-line headers fall back to
-        // func_start_row + 1 so the header line is never instrumented.
-        let mut body_start_row = func_start_row + 1;
-        for i in 0..node.child_count() {
-            if let Some(child) = node.child(i as u32)
-                && child.kind() == "body"
-            {
-                let bsr = child.start_position().row as u32;
-                if bsr > func_start_row {
-                    body_start_row = bsr;
-                }
-                break;
-            }
-        }
-
-        for row0 in body_start_row..=func_end_row {
-            lines.insert(row0 + 1); // 0-based → 1-based
-        }
-        // Still descend so inner-class methods are also collected.
-    }
-
-    for i in 0..node.child_count() {
-        if let Some(child) = node.child(i as u32) {
-            collect_body_lines(child, lines);
-        }
-    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -197,6 +172,32 @@ func _ready() -> void:
             instrumented.contains(&6),
             "assignment inside _ready should be instrumented"
         );
+    }
+
+    #[test]
+    fn skips_multi_line_signatures() {
+        let src = b"func f(a: int,\n\t\tb: int) -> int:\n\treturn a + b\n";
+        let (_, instrumented) = instrument_source(src, "res://test.gd");
+        let mut lines: Vec<u32> = instrumented.into_iter().collect();
+        lines.sort();
+        assert_eq!(lines, vec![3]);
+    }
+
+    #[test]
+    fn instruments_init_and_skips_bodiless_functions() {
+        let src =
+            b"@abstract\nclass A:\n\t@abstract func f() -> int\n\nfunc _init() -> void:\n\tprint(1)\n";
+        let (_, instrumented) = instrument_source(src, "res://test.gd");
+        let mut lines: Vec<u32> = instrumented.into_iter().collect();
+        lines.sort();
+        assert_eq!(lines, vec![6]);
+    }
+
+    #[test]
+    fn body_ends_after_a_trailing_multi_line_string() {
+        let src = b"func f() -> void:\n\tvar s = \"\"\"\n\ttext\n\t\"\"\"\n";
+        let (_, instrumented) = instrument_source(src, "res://test.gd");
+        assert!(instrumented.contains(&4), "{instrumented:?}");
     }
 
     #[test]

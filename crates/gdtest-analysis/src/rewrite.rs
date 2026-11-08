@@ -1,6 +1,6 @@
-//! GDScript assert rewriter — tree-sitter preprocessing for pytest-style rich diffs.
+//! GDScript assert rewriter: preprocessing for pytest-style rich diffs.
 //!
-//! Rewrites `assert(expr)` calls into `Gdt._rewrite_*(...)` calls that carry
+//! Rewrites `assert(expr)` statements into `Gdt._rewrite_*(...)` calls that carry
 //! operand values AND the source-text of the condition to the failure formatter,
 //! giving messages like:
 //!
@@ -10,29 +10,18 @@
 //!   right: 100
 //! ```
 //!
-//! Only single-line assert calls are rewritten; multi-line ones are left unchanged
+//! Only single-line asserts are rewritten; multi-line ones are left unchanged
 //! so line counts are never disturbed.
 //!
-//! # Tree-sitter structure (verified via dump_assert_tree test)
-//!
-//! ```text
-//! expression_statement
-//!   call
-//!     identifier "assert"          ← function name
-//!     arguments
-//!       (
-//!       binary_operator            ← condition (may be any expression)
-//!         <left>
-//!         ==                       ← unnamed operator token
-//!         <right>
-//!       [, string]                 ← optional message
-//!       )
-//! ```
+//! In gdsyntax's tree an assert is an `ASSERT_STMT`: the `assert` keyword and
+//! an `ARG_LIST` holding the condition and an optional message. The replaced
+//! range runs from the keyword to the closing parenthesis.
 
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use tree_sitter::Parser;
+use gdsyntax::SyntaxKind;
+use gdsyntax::ast::{AssertStmt, AstNode, BinaryOp as AstBinaryOp, Expr};
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -90,7 +79,7 @@ pub fn rewrite_source(source: &[u8], original_res_path: &str) -> RewriteOutput {
 // ── Internal types ────────────────────────────────────────────────────────────
 
 struct AssertInfo {
-    /// Byte range of the `call` node ("assert(...)").
+    /// Byte range of the statement, from `assert` to `)`.
     start_byte: usize,
     end_byte: usize,
     /// 1-based original line number.
@@ -128,127 +117,78 @@ impl BinaryOp {
             BinaryOp::Gte => "gte",
         }
     }
-    fn from_text(op: &str) -> Option<Self> {
+    fn from_ast(op: AstBinaryOp) -> Option<Self> {
         match op {
-            "==" => Some(BinaryOp::Eq),
-            "!=" => Some(BinaryOp::Ne),
-            "<" => Some(BinaryOp::Lt),
-            "<=" => Some(BinaryOp::Lte),
-            ">" => Some(BinaryOp::Gt),
-            ">=" => Some(BinaryOp::Gte),
+            AstBinaryOp::Equal => Some(BinaryOp::Eq),
+            AstBinaryOp::NotEqual => Some(BinaryOp::Ne),
+            AstBinaryOp::Less => Some(BinaryOp::Lt),
+            AstBinaryOp::LessEqual => Some(BinaryOp::Lte),
+            AstBinaryOp::Greater => Some(BinaryOp::Gt),
+            AstBinaryOp::GreaterEqual => Some(BinaryOp::Gte),
             _ => None,
         }
     }
 }
 
-// ── Tree-sitter traversal ─────────────────────────────────────────────────────
+// ── Tree traversal ────────────────────────────────────────────────────────────
 
 fn find_asserts(source: &[u8]) -> Option<Vec<AssertInfo>> {
-    let mut parser = Parser::new();
-    parser
-        .set_language(&tree_sitter_gdscript::LANGUAGE.into())
-        .ok()?;
-    let tree = parser.parse(source, None)?;
-    let mut out = Vec::new();
-    collect_assert_calls(tree.root_node(), source, &mut out);
-    Some(out)
+    // Byte offsets index into `source`, so it must be the parsed text as is.
+    let text = std::str::from_utf8(source).ok()?;
+    let tree = gdsyntax::parse(text);
+    Some(
+        tree.root()
+            .descendants()
+            .filter_map(AssertStmt::cast)
+            .filter_map(|stmt| parse_assert(&tree, &stmt))
+            .collect(),
+    )
 }
 
-fn collect_assert_calls(node: tree_sitter::Node, source: &[u8], out: &mut Vec<AssertInfo>) {
-    if node.kind() == "call"
-        && let Some(info) = parse_assert_call(node, source)
-    {
-        out.push(info);
-        return; // don't descend further into this call
-    }
-    for i in 0..node.child_count() {
-        if let Some(child) = node.child(i as u32) {
-            collect_assert_calls(child, source, out);
-        }
-    }
-}
-
-/// Returns Some if this `call` node is a single-line `assert(...)` call.
-fn parse_assert_call(node: tree_sitter::Node, source: &[u8]) -> Option<AssertInfo> {
-    // First child of `call` is the function expression (identifier "assert").
-    let func_node = node.child(0)?;
-    if func_node.kind() != "identifier" {
+/// Returns Some if this is a complete, single-line `assert(...)`.
+fn parse_assert(tree: &gdsyntax::SyntaxTree, stmt: &AssertStmt) -> Option<AssertInfo> {
+    let args = stmt.arguments()?;
+    // An unclosed argument list is a syntax error; leave it alone.
+    if args.syntax().last_token()?.kind() != SyntaxKind::PARENTHESIS_CLOSE {
         return None;
     }
-    if func_node.utf8_text(source).ok()? != "assert" {
+    // From `assert` (after any annotation) to `)`; a comment after it is not code.
+    let start_byte: usize = stmt.assert_token()?.text_range().start().into();
+    let end_byte: usize = args.code_range()?.end().into();
+
+    // Only rewrite single-line asserts.
+    let line = tree.position(start_byte).line;
+    if tree.position(end_byte).line != line {
         return None;
     }
 
-    // Only rewrite single-line calls.
-    if node.start_position().row != node.end_position().row {
-        return None;
-    }
-
-    // Second child is `arguments`.
-    let args_node = node.child(1)?;
-    if args_node.kind() != "arguments" {
-        return None;
-    }
-
-    // Walk arguments children: "(" [condition] ["," message] ")"
-    // Named children are the actual arguments; unnamed are punctuation.
-    let mut condition_node: Option<tree_sitter::Node> = None;
-    for i in 0..args_node.child_count() {
-        let child = args_node.child(i as u32)?;
-        if child.kind() == "(" || child.kind() == ")" || child.kind() == "," {
-            continue;
-        }
-        if condition_node.is_none() {
-            condition_node = Some(child);
-            break; // stop at first arg (condition); ignore message
-        }
-    }
-
-    let condition_node = condition_node?;
-    let condition_text = condition_node.utf8_text(source).ok()?.to_string();
-    let binary = try_parse_binary(condition_node, source);
+    // The message is not needed: the rewritten call reports the condition.
+    let condition = stmt.condition()?;
+    let binary = match &condition {
+        Expr::Binary(binary) => (|| {
+            Some(BinaryInfo {
+                op: BinaryOp::from_ast(binary.op()?)?,
+                left_text: node_text(tree, binary.lhs()?.syntax()),
+                right_text: node_text(tree, binary.rhs()?.syntax()),
+            })
+        })(),
+        _ => None,
+    };
 
     Some(AssertInfo {
-        start_byte: node.start_byte(),
-        end_byte: node.end_byte(),
-        line: node.start_position().row as u32 + 1,
-        condition_text,
+        start_byte,
+        end_byte,
+        line: line as u32,
+        condition_text: node_text(tree, condition.syntax()),
         binary,
     })
 }
 
-/// If node is a `binary_operator` with a comparison op, extract both sides.
-fn try_parse_binary(node: tree_sitter::Node, source: &[u8]) -> Option<BinaryInfo> {
-    if node.kind() != "binary_operator" {
-        return None;
-    }
-
-    // Children: <left> <op_token> <right>
-    // Named children are left and right; unnamed is the operator token.
-    let mut left: Option<tree_sitter::Node> = None;
-    let mut right: Option<tree_sitter::Node> = None;
-    let mut op: Option<BinaryOp> = None;
-
-    for i in 0..node.child_count() {
-        let child = node.child(i as u32)?;
-        if child.is_named() {
-            if left.is_none() {
-                left = Some(child);
-            } else {
-                right = Some(child);
-            }
-        } else if let Ok(txt) = child.utf8_text(source)
-            && let Some(parsed) = BinaryOp::from_text(txt)
-        {
-            op = Some(parsed);
-        }
-    }
-
-    Some(BinaryInfo {
-        op: op?,
-        left_text: left?.utf8_text(source).ok()?.to_string(),
-        right_text: right?.utf8_text(source).ok()?.to_string(),
-    })
+/// The source text of a node's code, without surrounding whitespace or comments.
+fn node_text(tree: &gdsyntax::SyntaxTree, node: &gdsyntax::SyntaxNode) -> String {
+    gdsyntax::ast::code_range(node)
+        .map(|range| tree.source()[range].to_string())
+        .unwrap_or_default()
 }
 
 // ── Code generation ───────────────────────────────────────────────────────────
@@ -300,41 +240,6 @@ fn escape_gdstring(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn dump_assert_tree() {
-        let src = b"extends RefCounted\n\nfunc test_foo():\n\tassert(x == y)\n\tassert(player.hp == 100, \"hp check\")\n\tassert(flag)\n";
-        let mut parser = Parser::new();
-        parser
-            .set_language(&tree_sitter_gdscript::LANGUAGE.into())
-            .unwrap();
-        let tree = parser.parse(src, None).unwrap();
-        fn dump(node: tree_sitter::Node, src: &[u8], indent: usize) {
-            let preview: String = node
-                .utf8_text(src)
-                .unwrap_or("?")
-                .chars()
-                .take(40)
-                .collect::<String>()
-                .replace('\n', "↵");
-            println!(
-                "{}{} [{}:{}-{}:{}] {:?}",
-                "  ".repeat(indent),
-                node.kind(),
-                node.start_position().row + 1,
-                node.start_position().column,
-                node.end_position().row + 1,
-                node.end_position().column,
-                preview
-            );
-            for i in 0..node.child_count() {
-                if let Some(c) = node.child(i as u32) {
-                    dump(c, src, indent + 1);
-                }
-            }
-        }
-        dump(tree.root_node(), src, 0);
-    }
 
     #[test]
     fn rewrites_eq_comparison() {
@@ -431,6 +336,31 @@ mod tests {
             s.contains(", 4)"),
             "line number not embedded correctly:\n{s}"
         );
+    }
+
+    #[test]
+    fn keeps_message_out_and_comment_after() {
+        let src = b"func test_foo():\n\tassert(a == b, \"msg\")  # note\n";
+        let out = rewrite_source(src, "res://test.gd");
+        let s = std::str::from_utf8(&out.source).unwrap();
+        assert!(
+            s.contains("\tGdt._rewrite_eq(a, b, \"a == b\", \"res://test.gd\", 2)  # note\n"),
+            "{s}"
+        );
+    }
+
+    #[test]
+    fn rewrites_annotated_asserts() {
+        let src = b"func test_foo():\n\t@warning_ignore(\"assert_always_true\")\n\tassert(true)\n";
+        let out = rewrite_source(src, "res://test.gd");
+        assert!(out.changed);
+    }
+
+    #[test]
+    fn rewrites_asserts_in_lambdas() {
+        let src = b"func test_foo():\n\tvar f := func(): assert(x)\n";
+        let out = rewrite_source(src, "res://test.gd");
+        assert!(out.changed);
     }
 
     #[test]

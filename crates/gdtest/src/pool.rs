@@ -1,6 +1,6 @@
 //! Worker pool + MPSC test dispatch.
 //!
-//! Work item granularity: a `(script, func)` pair. Tree-sitter discovery
+//! Work item granularity: a `(script, func)` pair. Discovery
 //! (gdtest-analysis) produces the full list; the pool dispatches each to
 //! whichever worker grabs it off the shared queue first — load-balanced
 //! for free, no shard pre-computation.
