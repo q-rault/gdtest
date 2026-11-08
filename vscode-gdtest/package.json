@@ -2,7 +2,7 @@
   "name": "vscode-gdtest",
   "displayName": "gdtest",
   "description": "Run and view gdtest test results in VS Code",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "publisher": "gdtest",
   "repository": "https://github.com/q-rault/gdtest",
   "engines": {
