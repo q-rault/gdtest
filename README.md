@@ -224,12 +224,16 @@ class describe_Movement:
     func test_moves_left() -> void: ...
 ```
 
-## `gdtest.toml`
+## Configuration
 
-`gdtest.toml` is loaded from the project directory or a parent directory. Priority is:
+gdtest reads its settings from the `[test]` section of `gdsuite.toml`, or from `gdtest.toml`, found in the project directory or a parent directory up to the Godot project root. A project that uses [gdsuite](https://github.com/q-rault/gdsuite) can keep every tool's settings in `gdsuite.toml`; a project that uses gdtest alone keeps them in `gdtest.toml`. The keys are the same in both.
+
+Keep gdtest's settings in one file. When `gdsuite.toml` has a `[test]` section, a `gdtest.toml` next to it is ignored, with a warning; the two are not merged.
+
+Priority is:
 
 ```text
-CLI flag > environment variable > gdtest.toml > built-in default
+CLI flag > environment variable > config file > built-in default
 ```
 
 Example:
@@ -248,6 +252,18 @@ fail_fast = true
 ```
 
 Use `--profile ci` to apply a named profile.
+
+The same settings in `gdsuite.toml`:
+
+```toml
+[test]
+harness = "addons/gdtest/gdtest_worker.gd"
+exclude = ["test/helpers/**", "test/mocks/**"]
+
+[test.profile.ci]
+reporter = "junit"
+fail_fast = true
+```
 
 ## Migration
 

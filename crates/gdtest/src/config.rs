@@ -1,12 +1,17 @@
-//! `gdtest.toml` — persistent config file.
+//! gdtest's persistent settings: the `[test]` section of `gdsuite.toml`, or
+//! `gdtest.toml`.
 //!
-//! Searched upward from the project root (like Cargo.toml). CLI flags and
+//! Searched upward from the project root (like Cargo.toml), stopping at the
+//! Godot project root. In each folder, a `gdsuite.toml` with a `[test]`
+//! section comes first; a `gdtest.toml` next to it is then ignored, with a
+//! warning, since one tool's settings belong in one file. CLI flags and
 //! existing env vars always win. The effective priority is:
 //!
-//!   CLI flag > environment variable > gdtest.toml > built-in default
+//!   CLI flag > environment variable > config file > built-in default
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::Deserialize;
 
@@ -77,7 +82,7 @@ impl GdtestConfig {
         let p = self
             .profile
             .remove(name)
-            .ok_or_else(|| anyhow::anyhow!("gdtest.toml: profile `{name}` not found"))?;
+            .ok_or_else(|| anyhow::anyhow!("gdtest config: profile `{name}` not found"))?;
         macro_rules! overlay {
             ($field:ident) => {
                 if p.$field.is_some() {
@@ -109,33 +114,97 @@ impl GdtestConfig {
 
 // ── File loading ──────────────────────────────────────────────────────────────
 
-/// Walk up from `start` looking for `gdtest.toml`, stopping at the Godot project
-/// root so that an unrelated config in a parent directory is never picked up.
-fn find_config_file(start: &Path) -> Option<PathBuf> {
+/// The file gdtest's settings come from.
+#[derive(Debug, PartialEq, Eq)]
+enum ConfigSource {
+    /// The `[test]` section of a `gdsuite.toml`.
+    Suite(PathBuf),
+    /// A `gdtest.toml`.
+    Own(PathBuf),
+}
+
+const SUITE_FILE: &str = "gdsuite.toml";
+const SUITE_SECTION: &str = "test";
+const OWN_FILE: &str = "gdtest.toml";
+
+/// Whether the warning about finding both files was printed: the config is
+/// loaded several times per run.
+static WARNED_BOTH: AtomicBool = AtomicBool::new(false);
+
+/// Walk up from `start` looking for gdtest's settings, stopping at the Godot
+/// project root so that an unrelated config in a parent directory is never
+/// picked up.
+fn find_config_file(start: &Path) -> anyhow::Result<Option<ConfigSource>> {
     let mut dir = start.to_path_buf();
     loop {
-        let candidate = dir.join("gdtest.toml");
-        if candidate.exists() {
-            return Some(candidate);
+        let suite = dir.join(SUITE_FILE);
+        let own = dir.join(OWN_FILE);
+        if suite_section(&suite)?.is_some() {
+            if own.exists() && !WARNED_BOTH.swap(true, Ordering::Relaxed) {
+                eprintln!(
+                    "gdtest: warning: {} has a [{SUITE_SECTION}] section, so {} is ignored. \
+                     Keep gdtest's settings in one of them.",
+                    shown(&suite),
+                    shown(&own)
+                );
+            }
+            return Ok(Some(ConfigSource::Suite(suite)));
+        }
+        if own.exists() {
+            return Ok(Some(ConfigSource::Own(own)));
         }
         if dir.join("project.godot").exists() || !dir.pop() {
-            return None;
+            return Ok(None);
         }
     }
+}
+
+/// A path as shown to the user, without the `\\?\` prefix that
+/// `canonicalize` adds on Windows.
+fn shown(path: &Path) -> String {
+    let text = path.display().to_string();
+    match text.strip_prefix(r"\\?\") {
+        Some(rest) => rest.to_string(),
+        None => text,
+    }
+}
+
+/// The `[test]` section of a `gdsuite.toml`, if the file exists and has one.
+fn suite_section(path: &Path) -> anyhow::Result<Option<toml::Value>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| anyhow::anyhow!("gdtest: failed to read {}: {e}", path.display()))?;
+    let mut table: toml::Table = toml::from_str(&text)
+        .map_err(|e| anyhow::anyhow!("gdtest: {} parse error: {e}", path.display()))?;
+    Ok(table.remove(SUITE_SECTION))
 }
 
 fn load(project_path: &Path) -> anyhow::Result<Option<GdtestConfig>> {
     let start = project_path
         .canonicalize()
         .unwrap_or_else(|_| project_path.to_path_buf());
-    let Some(path) = find_config_file(&start) else {
-        return Ok(None);
-    };
-    let text = std::fs::read_to_string(&path)
-        .map_err(|e| anyhow::anyhow!("gdtest: failed to read {}: {e}", path.display()))?;
-    let cfg: GdtestConfig = toml::from_str(&text)
-        .map_err(|e| anyhow::anyhow!("gdtest: {} parse error: {e}", path.display()))?;
-    Ok(Some(cfg))
+    match find_config_file(&start)? {
+        None => Ok(None),
+        Some(ConfigSource::Suite(path)) => {
+            let section = suite_section(&path)?.unwrap_or(toml::Value::Table(Default::default()));
+            let cfg: GdtestConfig = section.try_into().map_err(|e| {
+                anyhow::anyhow!(
+                    "gdtest: {} [{SUITE_SECTION}] parse error: {e}",
+                    path.display()
+                )
+            })?;
+            Ok(Some(cfg))
+        }
+        Some(ConfigSource::Own(path)) => {
+            let text = std::fs::read_to_string(&path)
+                .map_err(|e| anyhow::anyhow!("gdtest: failed to read {}: {e}", path.display()))?;
+            let cfg: GdtestConfig = toml::from_str(&text)
+                .map_err(|e| anyhow::anyhow!("gdtest: {} parse error: {e}", path.display()))?;
+            Ok(Some(cfg))
+        }
+    }
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -194,7 +263,7 @@ pub fn load_exclude(project_path: &str) -> Vec<String> {
 mod tests {
     use std::collections::HashMap;
 
-    use super::{GdtestConfig, ProfileConfig, find_config_file};
+    use super::{ConfigSource, GdtestConfig, ProfileConfig, find_config_file, load};
 
     #[test]
     fn config_search_stops_at_the_project_root() {
@@ -205,12 +274,58 @@ mod tests {
         std::fs::write(root.join("gdtest.toml"), "").unwrap();
         std::fs::write(project.join("project.godot"), "").unwrap();
 
-        assert_eq!(find_config_file(&subdir), None);
+        assert_eq!(find_config_file(&subdir).unwrap(), None);
 
         std::fs::write(project.join("gdtest.toml"), "").unwrap();
-        assert_eq!(find_config_file(&subdir), Some(project.join("gdtest.toml")));
+        assert_eq!(
+            find_config_file(&subdir).unwrap(),
+            Some(ConfigSource::Own(project.join("gdtest.toml")))
+        );
 
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_gdsuite_toml_test_section_comes_before_gdtest_toml() {
+        let project = std::env::temp_dir().join(format!("gdtest-suite-{}", std::process::id()));
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(project.join("project.godot"), "").unwrap();
+        std::fs::write(project.join("gdtest.toml"), "timeout = 1000\n").unwrap();
+
+        // A gdsuite.toml without [test] leaves gdtest.toml in charge.
+        std::fs::write(project.join("gdsuite.toml"), "[project]\nroot = \".\"\n").unwrap();
+        assert_eq!(load(&project).unwrap().unwrap().timeout, Some(1000));
+
+        std::fs::write(
+            project.join("gdsuite.toml"),
+            "[project]\nroot = \".\"\n\n[test]\nexclude = [\"test/manual/**\"]\n\n[test.profile.ci]\nfail_fast = true\n",
+        )
+        .unwrap();
+        assert_eq!(
+            find_config_file(&project).unwrap(),
+            Some(ConfigSource::Suite(project.join("gdsuite.toml")))
+        );
+        let mut cfg = load(&project).unwrap().unwrap();
+        // gdtest.toml is ignored, not merged.
+        assert_eq!(cfg.timeout, None);
+        assert_eq!(cfg.exclude, vec!["test/manual/**"]);
+        cfg.apply_profile("ci").unwrap();
+        assert_eq!(cfg.fail_fast, Some(true));
+
+        std::fs::remove_dir_all(project).unwrap();
+    }
+
+    #[test]
+    fn an_unknown_key_in_the_test_section_is_an_error() {
+        let project = std::env::temp_dir().join(format!("gdtest-suite-bad-{}", std::process::id()));
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(project.join("project.godot"), "").unwrap();
+        std::fs::write(project.join("gdsuite.toml"), "[test]\ntimout = 5\n").unwrap();
+
+        let err = load(&project).unwrap_err().to_string();
+        assert!(err.contains("gdsuite.toml [test] parse error"), "{err}");
+
+        std::fs::remove_dir_all(project).unwrap();
     }
 
     #[test]
