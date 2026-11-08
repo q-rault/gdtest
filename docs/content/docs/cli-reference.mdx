@@ -22,6 +22,11 @@ A `<target>` is one of:
 - `test/**/*.gd` — any `.gd` file inside a `test/` directory
 - `**/*.test.gd` — co-located test files anywhere in the project
 
+When walking a directory, gdtest skips hidden folders (`.godot`, `.git`…),
+`addons`, folders with a `.gdignore`, and nested Godot projects, as the Godot
+editor does: an addon's own tests never run as the project's. A directory or
+file you name directly is always used.
+
 ## Options
 
 Each option can be set three ways: as a CLI flag, an environment variable, or a

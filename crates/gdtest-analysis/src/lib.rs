@@ -12,6 +12,11 @@
 //!
 //! Users can override via `gdtest.toml`:  `include = ["test/**/*.gd", "**/*.test.gd"]`
 //!
+//! When walking a folder, hidden folders (`.godot`, `.git`…), `addons`,
+//! folders with a `.gdignore`, and nested Godot projects are skipped, as the
+//! Godot editor does, so an addon's own tests never run as the project's.
+//! A folder or file named directly is always used.
+//!
 //! Target: discovering 500 tests across 50 files in <100 ms on a warm cache
 //!.
 
@@ -75,7 +80,11 @@ pub fn resolve(
             }
             out.push(to_res_path(&abs, &project_abs)?);
         } else if abs.is_dir() {
-            for entry in WalkDir::new(&abs).follow_links(false) {
+            let walker = WalkDir::new(&abs)
+                .follow_links(false)
+                .into_iter()
+                .filter_entry(|entry| entry.depth() == 0 || !is_skipped_dir(entry));
+            for entry in walker {
                 let entry = entry.with_context(|| format!("walking {}", abs.display()))?;
                 if !entry.file_type().is_file() {
                     continue;
@@ -105,6 +114,19 @@ pub fn resolve(
     out.sort();
     out.dedup();
     Ok(out)
+}
+
+/// Folders a walk skips, as the Godot editor does: hidden ones, `addons`,
+/// those with a `.gdignore`, and nested Godot projects.
+fn is_skipped_dir(entry: &walkdir::DirEntry) -> bool {
+    if !entry.file_type().is_dir() {
+        return false;
+    }
+    let name = entry.file_name().to_string_lossy();
+    name.starts_with('.')
+        || name == "addons"
+        || entry.path().join(".gdignore").exists()
+        || entry.path().join("project.godot").exists()
 }
 
 /// Match a relative path (forward-slash separated) against a simple glob pattern.
@@ -767,6 +789,39 @@ class describe_Outer:
         let resolved = resolve(&inputs, &project, &patterns, &excludes).unwrap();
 
         assert_eq!(resolved, vec!["res://test/helpers/helper.gd"]);
+
+        fs::remove_dir_all(project).ok();
+    }
+
+    #[test]
+    fn walking_skips_addons_hidden_ignored_and_nested_projects() {
+        let project = make_temp_project("resolve-skips");
+        for (path, content) in [
+            ("test/test_ok.gd", ""),
+            ("feature/thing.test.gd", ""),
+            ("addons/plugin/plugin.test.gd", ""),
+            ("addons/plugin/test/test_plugin.gd", ""),
+            (".godot/cache/old.test.gd", ""),
+            ("generated/.gdignore", ""),
+            ("generated/gen.test.gd", ""),
+            ("server/project.godot", ""),
+            ("server/net.test.gd", ""),
+        ] {
+            let path = project.join(path);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, content).unwrap();
+        }
+        let patterns: Vec<String> = DEFAULT_PATTERNS.iter().map(|p| p.to_string()).collect();
+
+        let resolved = resolve(&[".".to_string()], &project, &patterns, &[]).unwrap();
+        assert_eq!(
+            resolved,
+            vec!["res://feature/thing.test.gd", "res://test/test_ok.gd"]
+        );
+
+        // A skipped folder named directly is walked.
+        let resolved = resolve(&["addons/plugin".to_string()], &project, &patterns, &[]).unwrap();
+        assert_eq!(resolved, vec!["res://addons/plugin/plugin.test.gd"]);
 
         fs::remove_dir_all(project).ok();
     }
