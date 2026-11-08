@@ -144,8 +144,8 @@ fn find_config_file(start: &Path) -> anyhow::Result<Option<ConfigSource>> {
                 eprintln!(
                     "gdtest: warning: {} has a [{SUITE_SECTION}] section, so {} is ignored. \
                      Keep gdtest's settings in one of them.",
-                    suite.display(),
-                    own.display()
+                    shown(&suite),
+                    shown(&own)
                 );
             }
             return Ok(Some(ConfigSource::Suite(suite)));
@@ -156,6 +156,16 @@ fn find_config_file(start: &Path) -> anyhow::Result<Option<ConfigSource>> {
         if dir.join("project.godot").exists() || !dir.pop() {
             return Ok(None);
         }
+    }
+}
+
+/// A path as shown to the user, without the `\\?\` prefix that
+/// `canonicalize` adds on Windows.
+fn shown(path: &Path) -> String {
+    let text = path.display().to_string();
+    match text.strip_prefix(r"\\?\") {
+        Some(rest) => rest.to_string(),
+        None => text,
     }
 }
 
