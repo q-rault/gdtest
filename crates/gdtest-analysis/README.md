@@ -10,6 +10,8 @@ It provides:
 - Source rewriting used by GUT and gdUnit4 migration flows
 - Mutation generation for mutation-testing runs
 
-This crate is primarily an internal workspace dependency of `gdtest`, but it is split out so the analysis layer stays isolated from the CLI runtime concerns.
+This crate is an internal dependency of `gdtest`, split out so the analysis layer stays isolated from the CLI runtime. It is published only because `gdtest` depends on it.
+
+**Stability:** there is no API stability promise outside `gdtest`. Each `gdtest` release depends on the `gdtest-analysis` release with exactly the same version, and any version may change the API. If you depend on this crate directly, pin an exact version (`gdtest-analysis = "=X.Y.Z"`).
 
 See the workspace [README](../../README.md) for end-user setup and CLI usage.

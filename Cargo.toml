@@ -29,7 +29,7 @@ anyhow = "1"
 thiserror = "2"
 toml = "0.8"
 
-gdtest-analysis = { path = "crates/gdtest-analysis", version = "0.2.1" }
+gdtest-analysis = { path = "crates/gdtest-analysis", version = "=0.2.1" }
 
 [profile.release]
 lto = "thin"

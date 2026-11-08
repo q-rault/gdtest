@@ -56,7 +56,7 @@ def check_version_sync() -> None:
     expected = cargo_version()
     cargo_text = read("Cargo.toml")
     checks = [
-        ("Cargo.toml#gdtest-analysis", re.search(r'^\s*gdtest-analysis\s*=\s*\{[^}]*version\s*=\s*"([^"]+)"', cargo_text, re.MULTILINE)),
+        ("Cargo.toml#gdtest-analysis", re.search(r'^\s*gdtest-analysis\s*=\s*\{[^}]*version\s*=\s*"=([^"]+)"', cargo_text, re.MULTILINE)),
         ("addons/gdtest/gdtest_worker.gd", re.search(r'^\s*const HARNESS_VERSION\s*:=\s*"([^"]+)"', read("addons/gdtest/gdtest_worker.gd"), re.MULTILINE)),
         ("vscode-gdtest/package.json", re.search(r'"version"\s*:\s*"([^"]+)"', read("vscode-gdtest/package.json"))),
         ("vscode-gdtest/package-lock.json", re.search(r'"version"\s*:\s*"([^"]+)"', read("vscode-gdtest/package-lock.json"))),
@@ -91,7 +91,7 @@ def bump(version: str) -> None:
     check_release_version(version)
     print(f"bumping to {version}")
     replace("Cargo.toml", r'^(version\s*=\s*)"[^"]+"', f'\\g<1>"{version}"')
-    replace("Cargo.toml", r'^(gdtest-analysis\s*=\s*\{[^}]*version\s*=\s*)"[^"]+"', f'\\g<1>"{version}"')
+    replace("Cargo.toml", r'^(gdtest-analysis\s*=\s*\{[^}]*version\s*=\s*)"[^"]+"', f'\\g<1>"={version}"')
     replace("addons/gdtest/gdtest_worker.gd", r'^(const HARNESS_VERSION\s*:=\s*)"[^"]+"', f'\\g<1>"{version}"')
     replace("vscode-gdtest/package.json", r'("version"\s*:\s*)"[^"]+"', f'\\g<1>"{version}"')
     replace("vscode-gdtest/package-lock.json", r'("version"\s*:\s*)"[^"]+"', f'\\g<1>"{version}"')
