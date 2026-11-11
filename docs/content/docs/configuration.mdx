@@ -25,22 +25,29 @@ Priority order: **CLI flag > env var > config file > built-in default**
 
 ## gdtest.toml
 
-For `godot_exe`, the built-in default is now auto-discovery of a compatible Godot 4 binary from common command names and common install locations.
+When `godot_exe` is not set, gdtest looks for a Godot 4 binary under common command names and install locations.
 
 ```toml
 # gdtest.toml — all fields are optional
 
+godot_exe  = "C:/tools/Godot.exe"   # default: auto-discovered
+display_mode = "headless"           # "headless" | "windowed"
 harness    = "addons/gdtest/gdtest_worker.gd"  # path to gdtest_worker.gd
 jobs       = 4          # parallel workers (default: CPU count)
-reporter   = "pretty"   # "pretty" | "tap" | "junit"
+reporter   = "pretty"   # "pretty" | "tap" | "json" | "junit"
 isolation  = "file"     # "file" | "test"
 timeout    = 5000       # per-test timeout in ms
 timeout_warn = 2000     # slow-test warning threshold in ms (no kill)
 fail_fast  = false      # stop after first failure
 retries    = 0          # re-run failing tests up to N extra times
+include_tags = ["fast"] # only run tests with one of these tags
+exclude_tags = ["slow"] # skip tests with any of these tags
 include    = ["test/**/*.gd", "**/*.test.gd"]  # discovery globs (these are the defaults)
 exclude    = ["test/manual/**"]  # discovery excludes for directory/default scans
+plugins    = ["res://test/support/slack_reporter.gd"]  # see below
 ```
+
+A profile accepts the same keys except `godot_exe`, `include` and `plugins`.
 
 `exclude` is for your own folders. Hidden folders (`.godot`, `.git`…),
 `addons`, folders with a `.gdignore`, and nested Godot projects are always
@@ -69,7 +76,7 @@ gdtest test/ --profile ci
 
 ## Environment variables
 
-Every setting has a corresponding env var that can substitute for a CLI flag:
+These env vars stand in for a CLI flag:
 
 | Env var | CLI flag |
 |---|---|
@@ -82,7 +89,34 @@ Every setting has a corresponding env var that can substitute for a CLI flag:
 | `GDTEST_TIMEOUT_WARN` | `--timeout-warn` |
 | `GDTEST_FAIL_FAST` | `--fail-fast` |
 | `GDTEST_RETRIES` | `--retries` |
-| `GDTEST_UPDATE_SNAPSHOTS` | `--update-snapshots` |
+| `GDTEST_DISPLAY_MODE` | `--display-mode` |
+| `GDTEST_INCLUDE_TAGS` | `--tag` |
+| `GDTEST_EXCLUDE_TAGS` | `--exclude-tag` |
+| `GDTEST_SEED` | `--seed` |
+| `GDTEST_COVERAGE_EXCLUDE` | `--coverage-exclude` |
+
+## Plugins
+
+`plugins` lists GDScript files the worker loads at startup. A plugin extends
+`Gdt.GdtReporter` to receive run events, or `Gdt.GdtFixture` to run code around
+every suite and test:
+
+```gdscript
+# res://test/support/slack_reporter.gd
+extends Gdt.GdtReporter
+
+func on_test_fail(file: String, name: String, us: int, failures: Array) -> void:
+    print("FAILED %s :: %s" % [file, name])
+
+func on_run_end(passed: int, failed: int, skipped: int) -> void:
+    print("%d passed, %d failed" % [passed, failed])
+```
+
+A reporter can also implement `on_run_start(total_tests)`,
+`on_test_start(file, name)`, `on_test_pass(file, name, us)`,
+`on_test_skip(file, name, message)` and `on_test_error(file, name, message)`.
+A fixture implements any of `before_suite()`, `after_suite()`, `before_each()`
+and `after_each()`.
 
 ## CI example (GitHub Actions)
 

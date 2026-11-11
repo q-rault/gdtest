@@ -85,3 +85,5 @@ cargo yank --version 0.1.0 -p gdtest
 
 `cargo install gdtest` will then refuse the yanked version, while still
 allowing an explicit `cargo install gdtest@0.1.0` for recovery.
+
+The docs site is published from release and prerelease tags; see [docs/README.md](docs/README.md#published-versions).

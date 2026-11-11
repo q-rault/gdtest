@@ -11,7 +11,7 @@ Via Cargo:
 cargo install gdtest
 ```
 
-Requires Rust 1.85+.
+Requires Rust 1.96 or later.
 
 Or download a binary from the [GitHub releases page](https://github.com/q-rault/gdtest/releases):
 
@@ -19,7 +19,7 @@ Or download a binary from the [GitHub releases page](https://github.com/q-rault/
 | --- | --- |
 | macOS arm64 | `gdtest-*-aarch64-apple-darwin.tar.gz` |
 | macOS x86_64 | `gdtest-*-x86_64-apple-darwin.tar.gz` |
-| Linux x86_64 | `gdtest-*-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux x86_64 | `gdtest-*-x86_64-unknown-linux-musl.tar.gz` |
 | Windows x86_64 | `gdtest-*-x86_64-pc-windows-msvc.zip` |
 
 Put the `gdtest` binary on your `PATH`.
@@ -86,13 +86,15 @@ If you only want the runtime harness:
 gdtest init --no-editor
 ```
 
-VS Code:
+VS Code and Zed: the extensions are not published to a marketplace yet, so
+build them from a clone of the repository with [just](https://just.systems):
 
 ```sh
-code --install-extension vscode-gdtest-*.vsix
+just package-vscode     # writes vscode-gdtest/vscode-gdtest-<version>.vsix
+code --install-extension vscode-gdtest/vscode-gdtest-*.vsix
 ```
 
-Optional settings:
+Optional VS Code settings:
 
 ```json
 {
@@ -101,14 +103,13 @@ Optional settings:
 }
 ```
 
-Zed:
+```sh
+rustup target add wasm32-wasip1
+just package-zed        # writes zed-gdtest/extension.wasm
+```
 
-1. Download `extension.wasm` from a release.
-2. Put it next to `extension.toml` and `tasks.json` from `zed-gdtest/`.
-3. Place the folder in your Zed extensions directory.
-
-- macOS / Linux: `~/.config/zed/extensions/gdtest/`
-- Windows: `%APPDATA%\\Zed\\extensions\\gdtest\\`
+Then in Zed, run **zed: install dev extension** and pick the `zed-gdtest/`
+folder.
 
 ## Compatibility
 
@@ -116,7 +117,7 @@ Zed:
 | --- | --- | --- |
 | 0.2.x | 0.2.x | 4.5+ (tested on 4.6 and 4.7) |
 
-The addon and CLI are versioned together and released in the same archive. If you mix versions, gdtest will print a clear error at startup pointing to this table.
+The addon and CLI are versioned together and released in the same archive. The addon's major and minor version must match the CLI's: if they don't, gdtest stops with an error telling you to update `addons/gdtest/` (`gdtest init --force` does it).
 
 You can always check which harness version is installed by looking for `HARNESS_VERSION` at the top of `addons/gdtest/gdtest_worker.gd`.
 

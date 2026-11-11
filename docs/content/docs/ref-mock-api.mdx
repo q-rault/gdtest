@@ -85,6 +85,32 @@ assert_eq(calls[0][0]["hp"], 80)
 
 ---
 
+## Spies, partial mocks and autoloads
+
+```gdscript
+spy(real_object) -> Object         # wraps an existing instance
+partial_mock(SomeClass) -> Object  # fresh instance
+mock_singleton("AutoloadName") -> Object
+```
+
+A **spy** and a **partial mock** run the real implementation of every method
+and record each call. `stub` replaces only the methods you name, and the call
+assertions above work on both.
+
+`mock_singleton` replaces a project autoload (a GDScript node at
+`/root/<name>`) with a mock for the current test, so code calling
+`AutoloadName.method()` reaches the mock. The real autoload is restored after
+`after_each`. Engine singletons such as `Input`, `OS` or `Time` are C++
+objects and can't be replaced.
+
+```gdscript
+var audio = mock_singleton("AudioBus")
+player.take_damage(10)
+assert_called_with(audio, "play", ["hurt"])
+```
+
+---
+
 ## Limitations
 
 - Methods prefixed with `_` are not replaced and retain their original implementation.

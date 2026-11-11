@@ -3,7 +3,7 @@ title: Assertions Reference
 description: Complete API reference for all gdtest assertion functions.
 ---
 
-All functions below are available as unqualified calls when your test class `extends GdTest`, or as `Gdt.*` static calls when it must extend an engine type.
+All functions below are available as unqualified calls when your test class `extends GdTest`, or as `Gdt.*` static calls when it must extend an engine type. Functions written with a `Gdt.` prefix exist only as static calls.
 
 For a walkthrough with context, see [Writing Your First Test](/docs/guide-first-test).
 
@@ -131,6 +131,20 @@ func test_player_emits_died() -> void:
 
 `assert_no_signal` passes if the signal is *not* emitted within the timeout.
 
+### Watching and ordering signals
+
+```gdscript
+var watcher = watch_signal(obj, "signal_name")   # records every emission
+watcher.count          # number of emissions so far
+watcher.last_args      # arguments of the latest emission
+watcher.emissions      # every emission's arguments
+assert_emitted_before(obj_a, "sig_a", obj_b, "sig_b", msg = "")
+assert_signal_order([{obj = a, sig = "started"}, {obj = b, sig = "finished"}], msg = "")
+```
+
+Order assertions compare the first emission of each signal, which must be
+watched with `watch_signal` before it fires. Watchers disconnect after each test.
+
 ---
 
 ## Snapshots
@@ -153,12 +167,40 @@ skip(msg = "")     # marks test skipped, continues execution
 
 ---
 
+### Soft assertions
+
+```gdscript
+Gdt.expect(cond, msg = "")
+Gdt.expect_eq(actual, expected, msg = "")    # also expect_ne, expect_lt, expect_lte,
+Gdt.expect_true(cond, msg = "")              # expect_gt, expect_gte, expect_approx,
+Gdt.expect_null(value, msg = "")             # expect_false, expect_not_null
+assert_all(checks: Callable) -> bool
+```
+
+Every assertion records its failure and lets the test continue, so one run
+reports every broken check. `assert_all` runs a block of checks and returns
+`false` if any failed, to stop a test whose setup is broken:
+
+```gdscript
+if not assert_all(func() -> void:
+    assert_eq(player.hp, 100)
+    assert_eq(player.mana, 50)
+):
+    return
+```
+
+---
+
 ## Async helpers
 
 ```gdscript
 await wait_physics_frames(n = 1)
 await wait_physics_seconds(seconds)
 await wait_process_frame()
+await wait_until(predicate, timeout_ms = 2000)   # until predicate returns true
+await wait_while(predicate, timeout_ms = 2000)   # while predicate returns true
+set_physics_delta(seconds)   # fixed physics step for this test
+reset_physics_delta()
 ```
 
 ---
@@ -169,6 +211,15 @@ await wait_process_frame()
 add_child_autofree(node) -> Node      # adds node as child; freed after test
 instantiate_scene(packed) -> Node     # instantiates and adds as child; freed after test
 scene_runner(packed) -> SceneRunner   # see SceneRunner API Reference
+autoref(obj) -> Object                # frees or releases obj after the test
+```
+
+`test_world()` gives a scene container that is cleaned up after the test:
+
+```gdscript
+var world = test_world()
+var actor = world.spawn(Enemy)          # class must extend Node
+await world.physics_frames(10)          # also process_frames(n), ready()
 ```
 
 ---
@@ -232,3 +283,91 @@ class describe_Battle extends GdTest:
 ```
 
 Reported as `describe_Battle/test_basic_hit`, `describe_Battle/test_crit`.
+
+---
+
+## Property tests
+
+```gdscript
+Gdt.forall(generators: Array, check: Callable, runs = 100) -> bool
+Gdt.gen_int(min, max)
+Gdt.gen_float(min, max)
+Gdt.gen_string(max_len = 10)
+Gdt.gen_bool()
+Gdt.gen_choice([a, b, c])
+```
+
+`forall` calls `check` with one generated value per generator. On failure it
+shrinks the inputs to a smaller failing case and prints it with the seed;
+`gdtest --seed <seed>` replays it. See [Running Tests](/docs/running-tests#property-tests).
+
+---
+
+## Performance
+
+```gdscript
+Gdt.bench(callable, iterations = 100) -> BenchResult   # mean_ms, median_ms, p95_ms, p99_ms, min_ms, max_ms
+Gdt.assert_completes_in(result_or_callable, max_ms)     # median under max_ms
+Gdt.assert_faster_than(result_a, result_b, factor = 1.0) # a at least `factor` times faster than b
+```
+
+---
+
+## Errors and warnings
+
+```gdscript
+Gdt.push_error(msg)       # use in game code instead of push_error() to make it assertable
+Gdt.push_warning(msg)
+assert_push_error(text, msg = "")     # text, or a regex written as "/…/"
+assert_push_warning(text, msg = "")
+assert_no_push_error(msg = "")
+```
+
+---
+
+## Memory
+
+```gdscript
+assert_no_new_orphans(msg = "")   # no orphan nodes since before_each
+current_heap_delta() -> int       # static memory change in bytes since the test started
+```
+
+---
+
+## Properties and exports
+
+```gdscript
+assert_exports(obj, "speed", TYPE_FLOAT, msg = "")
+assert_property(obj, "speed", 300.0, msg = "")            # default value on a fresh instance
+assert_readonly_property(obj, "id", msg = "")             # setting it has no effect
+assert_property_with_range(obj, "volume", 0.0, 1.0, msg = "")   # @export_range bounds
+```
+
+---
+
+## Files
+
+```gdscript
+assert_file(path).exists()                  # also is_file(), is_directory(), is_empty()
+create_temp_dir(name) -> String             # absolute path, created fresh
+delete_temp_dir(name)
+```
+
+---
+
+## Fluent assertions
+
+```gdscript
+Gdt.assert_that(value).is_not_null().is_equal_to(42)   # any value
+Gdt.assert_int(value).is_between(1, 10)
+Gdt.assert_float(value).is_equal_approx(0.5, 0.01)
+Gdt.assert_str(text).starts_with("user://").ends_with(".save")
+Gdt.assert_array(items).contains_exactly_in_any_order(["a", "b"])
+Gdt.assert_dict(data).contains_key_value("hp", 100)
+Gdt.assert_object(node).is_instanceof(Enemy)
+Gdt.assert_bool(flag).is_true()
+await Gdt.assert_signal_of(node).is_emitted("died")
+```
+
+Every fluent check returns the assertion, so checks chain. These mirror
+gdUnit4's API, see [Migrating from gdUnit4](/docs/migrate-from-gdunit4).
