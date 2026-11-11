@@ -17,5 +17,6 @@ Use this plugin together with:
 The panel resolves the `gdtest` binary in this order:
 
 - `GDTEST_BIN`
+- `.gdsuite/tools/gdtest/bin/gdtest` (installed by gdsuite)
 - nearby project-local binaries
 - `gdtest` on `PATH`

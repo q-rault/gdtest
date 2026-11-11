@@ -192,7 +192,13 @@ func _find_gdtest() -> void:
 	if env_bin != "" and FileAccess.file_exists(env_bin):
 		_gdtest_path = env_bin
 		return
-	# 2. Pick the newest common local binary so a stale debug build does not
+	# 2. Binary installed by gdsuite into the project
+	for rel: String in [".gdsuite/tools/gdtest/bin/gdtest.exe", ".gdsuite/tools/gdtest/bin/gdtest"]:
+		var gdsuite_bin := project_root.path_join(rel)
+		if FileAccess.file_exists(gdsuite_bin):
+			_gdtest_path = gdsuite_bin
+			return
+	# 3. Pick the newest common local binary so a stale debug build does not
 	# override a freshly rebuilt release binary (or vice versa).
 	var candidates: Array[String] = []
 	for rel: String in [
@@ -209,7 +215,7 @@ func _find_gdtest() -> void:
 	if not candidates.is_empty():
 		_gdtest_path = _newest_file_path(candidates)
 		return
-	# 3. Fall back to PATH
+	# 4. Fall back to PATH
 	_gdtest_path = "gdtest"
 
 func _newest_file_path(paths: Array[String]) -> String:
