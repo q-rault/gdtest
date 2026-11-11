@@ -23,7 +23,7 @@ Optional integrations:
 - VS Code: build the extension from `vscode-gdtest/`
 - Zed: use the extension in `zed-gdtest/`
 
-More setup details live in the published docs: [Installation docs](https://gdtest.onrender.com/docs/installation).
+More setup details live in the published docs: [Installation docs](https://q-rault.github.io/gdtest/docs/installation).
 
 ## Project setup
 
