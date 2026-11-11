@@ -77,37 +77,6 @@ package-zed:
 # Package all publishable artifacts.
 package-all: package-editor package-vscode package-zed
 
-check-clean-git:
-    python scripts/release.py check-clean-git
-
-check-release-version NEW_VER:
-    python scripts/release.py check-release-version {{ NEW_VER }}
-
-check-version-sync:
-    python scripts/release.py check-version-sync
-
 # Copy addons/ into the gdtest crate, which embeds them for `gdtest init`.
 sync-assets:
     python scripts/release.py sync-assets
-
-# Bump version across all manifests.
-# Usage: just bump 0.2.0
-bump NEW_VER:
-    python scripts/release.py bump {{ NEW_VER }}
-
-release NEW_VER:
-    just check-clean-git
-    just check-release-version "{{ NEW_VER }}"
-    just bump "{{ NEW_VER }}"
-    just check-version-sync
-    cargo test --workspace --quiet
-    git add Cargo.toml Cargo.lock addons crates/gdtest/assets vscode-gdtest/package.json vscode-gdtest/package-lock.json zed-gdtest/extension.toml addons/gdtest_editor/plugin.cfg Justfile PUBLISHING.md scripts/release.py
-    git diff --cached --quiet; if ($LASTEXITCODE -eq 0) { Write-Output "release: no version file changes to commit; continuing" } else { git commit -m "release: v{{ NEW_VER }}" }
-    git tag "v{{ NEW_VER }}"
-    git push origin main
-    git push origin "v{{ NEW_VER }}"
-
-retag-release NEW_VER:
-    just check-release-version "{{ NEW_VER }}"
-    git tag -f "v{{ NEW_VER }}"
-    git push origin --force "refs/tags/v{{ NEW_VER }}:refs/tags/v{{ NEW_VER }}"
