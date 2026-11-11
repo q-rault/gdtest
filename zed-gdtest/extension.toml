@@ -1,6 +1,6 @@
 id = "gdtest"
 name = "gdtest"
-version = "0.2.5"
+version = "0.2.6"
 schema_version = 1
 authors = ["Quentin Rault"]
 description = "Run GDScript tests with gdtest from Zed — task provider for run all, run file, and run test at cursor"
