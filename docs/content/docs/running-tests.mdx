@@ -1,0 +1,148 @@
+---
+title: Running Tests
+description: Choose which tests run, tag them, measure coverage, benchmark, and check your suite with mutation testing.
+---
+
+Every flag below is listed in the [CLI Reference](/docs/cli-reference).
+
+## Choosing what runs
+
+```sh
+gdtest                                   # every test the discovery globs find
+gdtest test/combat/                      # one folder
+gdtest test/test_player.gd               # one file
+gdtest test/test_player.gd::test_jump    # one test
+gdtest --filter "inventory"              # tests whose `file :: func` matches a regex
+gdtest --list                            # print what would run, run nothing
+```
+
+### Only what your change affects
+
+```sh
+gdtest --changed-only                 # uncommitted changes (git diff HEAD)
+gdtest --changed-since origin/main    # everything changed on your branch
+```
+
+gdtest builds the dependency graph of your scripts and runs the tests that
+reach a changed file, directly or through other scripts.
+
+### Watch mode
+
+```sh
+gdtest test/ --watch
+```
+
+Runs the targets, then again after every `.gd` change, until Ctrl-C.
+
+## Tags
+
+Tag a test with `## @tag` lines right above it:
+
+```gdscript
+## @tag slow
+## @tag integration
+func test_full_match_simulation() -> void:
+    ...
+```
+
+```sh
+gdtest --tag integration          # only tests tagged integration
+gdtest --tag fast --tag unit      # tagged fast or unit
+gdtest --exclude-tag slow         # everything except slow tests
+```
+
+To make it the default, set `include_tags` or `exclude_tags` in the
+[configuration](/docs/configuration), for example in a `ci` profile.
+
+## Focus and skip
+
+Prefix a test with `ftest_` to run only it in its file, or `xtest_` to skip it.
+Inside a test, `skip("reason")` and `pending("reason")` mark it without failing.
+See [Assertions Reference](/docs/assertions#inline-skip--focus).
+
+## Coverage
+
+```sh
+gdtest --coverage                          # writes coverage/lcov.info
+gdtest --coverage --min-coverage 80        # fail below 80% line coverage
+gdtest --coverage --coverage-exclude "scripts/debug/**"
+```
+
+gdtest instruments your scripts for the run, merges the counts from every
+worker, prints a summary and writes an LCOV file that coverage services and
+editor extensions read.
+
+## HTML report
+
+```sh
+gdtest --html-report                 # gdtest-report.html
+gdtest --html-report reports/run.html
+```
+
+A single file with every result and failure message, to attach to a CI run.
+
+## Property tests
+
+`Gdt.forall` calls your check with generated inputs, 100 times by default. When a
+case fails, gdtest shrinks it to a smaller failing input and prints it with the
+seed:
+
+```gdscript
+func test_damage_never_negative() -> void:
+    Gdt.forall([Gdt.gen_int(0, 1000), Gdt.gen_int(0, 1000)], func(attack: int, defense: int) -> void:
+        assert_gte(Battle.calc_damage(attack, defense), 0)
+    )
+```
+
+Re-run that exact case with `gdtest --seed <seed>`. Generators are listed in
+the [Assertions Reference](/docs/assertions#property-tests).
+
+## Benchmarks
+
+Functions named `bench_*` are benchmarks. A normal run skips them; `--bench`
+runs only them:
+
+```gdscript
+func bench_pathfinding() -> void:
+    var result = Gdt.bench(func() -> void: grid.find_path(start, goal), 200)
+    print("median %.2f ms, p95 %.2f ms" % [result.median_ms, result.p95_ms])
+    Gdt.assert_completes_in(result, 4.0)
+```
+
+```sh
+gdtest --bench
+```
+
+`Gdt.bench(callable, iterations = 100)` returns the mean, median, p95, p99, min and
+max time in milliseconds. Timing assertions work in any test, see the
+[Assertions Reference](/docs/assertions#performance).
+
+## Mutation testing
+
+Coverage shows which lines ran; mutation testing shows whether your tests
+would notice those lines being wrong.
+
+```sh
+gdtest test/ --mutate scripts/battle.gd
+```
+
+For each small change gdtest can make to `battle.gd`, such as `<` into `<=` or
+`+` into `-`, it runs the tests. A mutant is **killed** when a test fails and
+**survives** when every test still passes. The score at the end is the share of
+killed mutants; each survivor points at behaviour no test checks.
+
+<Callout type="warn">
+Each mutant is written into the source file while its tests run, and the
+original is restored afterwards. Commit your work first, and don't edit the
+file during the run. `--mutate` can't be combined with `--watch`.
+</Callout>
+
+## CI
+
+```yaml
+- name: Run gdtest
+  run: gdtest test/ --profile ci --no-auto-import --reporter junit > results.xml
+```
+
+Split a long suite across jobs with `--partition`, then merge the results with
+`gdtest aggregate`, see [Partitioning](/docs/cli-reference#partitioning-ci-sharding).

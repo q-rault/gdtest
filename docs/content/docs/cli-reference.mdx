@@ -6,10 +6,12 @@ description: Every gdtest flag, env var, and subcommand.
 ## Synopsis
 
 ```sh
-gdtest                               # scan cwd using discovery globs
+gdtest                               # scan the project using discovery globs
 gdtest <target>... [options]
+gdtest res://test/foo.gd::test_bar   # one test, no worker pool
 gdtest init [--no-editor] [--force]
-gdtest res://test/foo.gd::test_bar   # single test, short-circuits pool
+gdtest aggregate <shard.xml>... [--output combined.xml]
+gdtest migrate gut|gdunit4 <inputs>... [--out DIR]
 ```
 
 A `<target>` is one of:
@@ -18,7 +20,7 @@ A `<target>` is one of:
 - `res://path/to/file.gd` — same, with project-relative prefix
 - `file.gd::test_bar` — run exactly that one test function (`::` separates the file path from the function name; no worker pool is created, so you get full stderr output directly)
 
-**Discovery globs** (configurable via `gdtest.toml` `include` and `exclude`):
+**Discovery globs** (configurable via the `include` and `exclude` settings):
 - `test/**/*.gd` — any `.gd` file inside a `test/` directory
 - `**/*.test.gd` — co-located test files anywhere in the project
 
@@ -29,36 +31,70 @@ file you name directly is always used.
 
 ## Options
 
-Each option can be set three ways: as a CLI flag, an environment variable, or a
-`gdtest.toml` key — whichever is most convenient for your workflow.
+Most options can be set three ways: as a CLI flag, an environment variable, or
+a [configuration](/docs/configuration) key. A flag wins over the env var, which
+wins over the config file.
+
+### Running
 
 | Flag | Env var | Default | Description |
 |---|---|---|---|
-| `-j, --jobs <N>` | `GDTEST_JOBS` | CPU count | Parallel worker count |
-| `--reporter <KIND>` | `GDTEST_REPORTER` | `pretty` | `pretty` \| `tap` \| `junit` |
-| `--isolation <MODE>` | `GDTEST_ISOLATION` | `file` | `file` \| `test` (see below) |
-| `--filter <REGEX>` | — | — | Only run tests matching regex on `file :: func` |
-| `--list` | — | — | Print discovered tests and exit |
-| `--timeout <MS>` | `GDTEST_TIMEOUT` | `5000` | Per-test timeout in ms; exceeding it reports an error |
-| `--timeout-warn <MS>` | `GDTEST_TIMEOUT_WARN` | — | Slow-test warning (no kill) |
-| `--fail-fast` | `GDTEST_FAIL_FAST` | off | Stop after first failure or error |
-| `--retries <N>` | `GDTEST_RETRIES` | `0` | Re-run failing tests up to N extra times |
-| `--update-snapshots` | `GDTEST_UPDATE_SNAPSHOTS` | off | Rewrite snapshot files |
-| `--partition <SPEC>` | — | — | Shard the suite (see below) |
-| `--profile <NAME>` | — | — | Activate a `[profile.NAME]` block from `gdtest.toml` |
-| `--watch` | — | off | Re-run on `.gd` file changes; Ctrl-C to exit |
-| `--no-auto-import` | — | off | Skip one-shot `godot --import` on startup |
-| `--godot-exe <PATH>` | `GODOT_EXE` | auto-discovered | Godot binary path |
+| `-j, --jobs <N>` | `GDTEST_JOBS` | CPU count | Parallel worker count (clamped by test count) |
+| `--isolation <MODE>` | `GDTEST_ISOLATION` | `file` | `file` \| `test` (see [below](#isolation-modes)) |
+| `--timeout <MS>` | `GDTEST_TIMEOUT` | `5000` | Per-test timeout; a test that exceeds it is an error and its worker restarts |
+| `--timeout-warn <MS>` | `GDTEST_TIMEOUT_WARN` | off | Warn about slow tests without stopping them; must be below `--timeout` |
+| `--fail-fast` | `GDTEST_FAIL_FAST` | off | Stop after the first failure or error |
+| `--retries <N>` | `GDTEST_RETRIES` | `0` | Re-run a failing test up to N more times; timeouts and crashes are not retried |
+| `--profile <NAME>` | — | — | Activate a `[profile.NAME]` block from the config |
+| `--watch` | — | off | Re-run the targets after every `.gd` change; Ctrl-C to exit |
+| `--no-rewrite` | — | off | Run `assert(a == b)` as written instead of rewriting it for rich diffs |
+| `--update-snapshots` | — | off | Accept new or changed [snapshot](/docs/snapshots) values |
+| `--seed <N>` | `GDTEST_SEED` | random | Fix the RNG seed of [`forall` property tests](/docs/assertions#property-tests) |
+| `--bench` | — | off | Run only `bench_*` functions (see [Running Tests](/docs/running-tests#benchmarks)) |
+
+### Selecting tests
+
+| Flag | Env var | Description |
+|---|---|---|
+| `--filter <REGEX>` | — | Only tests whose `file :: func` matches the regex |
+| `--tag <TAG>` | `GDTEST_INCLUDE_TAGS` | Only tests with this [tag](/docs/running-tests#tags) (repeatable, any of them) |
+| `--exclude-tag <TAG>` | `GDTEST_EXCLUDE_TAGS` | Skip tests with this tag (repeatable) |
+| `--changed-only` | — | Only tests affected by uncommitted changes (`git diff HEAD`) |
+| `--changed-since <REF>` | — | Only tests affected by changes since a git ref, e.g. `origin/main` |
+| `--partition <SPEC>` | — | Run one shard of the suite (see [below](#partitioning-ci-sharding)) |
+| `--list` | — | Print the discovered tests as `file :: func` and exit |
+
+### Output
+
+| Flag | Env var | Default | Description |
+|---|---|---|---|
+| `--reporter <KIND>` | `GDTEST_REPORTER` | `pretty` | `pretty` \| `tap` \| `json` \| `junit` |
+| `--output-dir <DIR>` | — | — | Write JSON events as numbered files under DIR (used by the editor panel) |
+| `--html-report [PATH]` | — | `gdtest-report.html` | Write a standalone HTML report after the run |
+| `--coverage` | — | off | Instrument sources and write `coverage/lcov.info` |
+| `--min-coverage <PCT>` | — | — | Fail when total line coverage is below PCT; needs `--coverage` |
+| `--coverage-exclude <GLOB>` | `GDTEST_COVERAGE_EXCLUDE` | — | Leave matching files out of coverage (repeatable) |
+| `--mutate <FILE>` | — | — | [Mutation testing](/docs/running-tests#mutation-testing) of one source file |
+
+### Godot
+
+| Flag | Env var | Default | Description |
+|---|---|---|---|
+| `--godot-exe <PATH>` | `GODOT_EXE` | auto-discovered | Godot 4 binary |
+| `--display-mode <MODE>` | `GDTEST_DISPLAY_MODE` | `headless` | `headless` \| `windowed` |
 | `--project-path <DIR>` | — | `.` | Godot project root |
-| `--harness <PATH>` | `GDTEST_HARNESS` | `addons/gdtest/gdtest_worker.gd` | Path to worker script |
+| `--harness <PATH>` | `GDTEST_HARNESS` | `addons/gdtest/gdtest_worker.gd` | Worker script |
+| `--no-auto-import` | — | off | Skip the one-time `godot --headless --import` that runs when the class cache is missing |
 
 ## Reporters
 
 **`pretty`** (default) — coloured human-readable output with a spinner and summary line.
 
-**`tap`** — TAP v14 format; compatible with `tap-junit`, `tap-parser`, and most CI TAP consumers.
+**`tap`** — TAP v14; works with `tap-junit`, `tap-parser` and most CI TAP consumers.
 
-**`junit`** — JUnit XML to stdout. Pipe to a file for GitHub Actions / GitLab CI test reports.
+**`json`** — one JSON event per line, for tools that read results as they arrive.
+
+**`junit`** — JUnit XML on stdout. Redirect it to a file for GitHub Actions or GitLab CI test reports.
 
 ```sh
 gdtest test/ --reporter junit > results.xml
@@ -66,56 +102,87 @@ gdtest test/ --reporter junit > results.xml
 
 ## Isolation modes
 
-**`file`** (default) — one Godot process per test file. Fast; tests in the same
-file share an autoload environment.
+**`file`** (default) — a worker stays alive across the tests of a file, and
+across files. Fast; tests that run in the same worker share autoload state.
 
-**`test`** — one Godot process per test function. ~200 ms startup overhead per
-test, but each test gets a completely clean process. Required when tests mutate
-global singletons (`GameClock`, etc.) and those mutations leak between tests.
+**`test`** — the worker restarts between every test. About 200 ms more per
+test, but each test starts with clean autoloads and `Engine` metadata. Use it
+when tests change global singletons and those changes leak.
+
+Instead of switching the whole run, mark only the files or tests that need it:
+
+```gdscript
+## @isolation test
+extends GdTest            # every test in this file gets its own worker
+
+## @isolation file
+func test_fast_path() -> void:   # except this one
+    pass
+```
 
 ## Partitioning (CI sharding)
 
-Split the suite across multiple CI jobs with `--partition`:
+Split the suite across CI jobs with `--partition`, then merge the JUnit files:
 
 ```sh
 # Round-robin: each job gets every 3rd test
-gdtest test/ --partition count:1/3   # job 1
-gdtest test/ --partition count:2/3   # job 2
-gdtest test/ --partition count:3/3   # job 3
+gdtest test/ --partition count:1/3 --reporter junit > shard-1.xml
+gdtest test/ --partition count:2/3 --reporter junit > shard-2.xml
+gdtest test/ --partition count:3/3 --reporter junit > shard-3.xml
 
-# Hash-based: stable — same test always lands on the same shard
+# Hash-based: the same test always lands on the same shard
 gdtest test/ --partition hash:1/3
+
+# After all shards
+gdtest aggregate shard-*.xml --output combined.xml
 ```
 
-`count:N/M` — takes every M-th test starting at position N−1.
-`hash:N/M` — FNV-1a hash of `script::func`; distribution is stable across suite changes.
+`count:N/M` takes every M-th test starting at position N−1.
+`hash:N/M` uses an FNV-1a hash of `script::func`, so a test keeps its shard as
+the suite grows.
 
-## Watch mode
+## Subcommands
 
-```sh
-gdtest test/ --watch   # re-runs on .gd file change; Ctrl-C to exit
-```
-
-## Project init
+### `gdtest init`
 
 ```sh
 gdtest init
 gdtest init --no-editor
 gdtest init --project-path /path/to/game
-gdtest init --no-editor --force
+gdtest init --force
 ```
 
-`gdtest init` installs the bundled `addons/gdtest/` runtime and
-`addons/gdtest_editor/` into the target Godot project by default. Pass
-`--no-editor` to install only the runtime.
+Installs the bundled `addons/gdtest/` runtime and the `addons/gdtest_editor/`
+panel into the project. `--no-editor` installs only the runtime.
 
-If a target file already exists with different contents, `init` stops rather
-than overwriting local changes. Use `--force` only when you want to replace the
-project copy with the version bundled in the current `gdtest` binary.
+If a file already exists with different contents, `init` stops rather than
+overwrite local changes. `--force` replaces the project copy with the version
+bundled in the current `gdtest` binary.
 
+### `gdtest aggregate`
+
+```sh
+gdtest aggregate shard-1.xml shard-2.xml --output combined.xml
+```
+
+Merges JUnit XML files written by `--reporter junit` into one report, on stdout
+unless `--output` is given.
+
+### `gdtest migrate`
+
+```sh
+gdtest migrate gut test/
+gdtest migrate gdunit4 test/ --out .gdtest_rewrite/gdunit4
+```
+
+Writes gdtest versions of GUT or gdUnit4 tests next to the originals, which are
+left untouched, plus a report of what could not be converted. Output goes to
+`.gdtest_rewrite/<framework>` unless `--out` is given. See
+[Migrating from GUT](/docs/migrate-from-gut) and
+[Migrating from gdUnit4](/docs/migrate-from-gdunit4).
 
 ## Single-test mode
 
 ```sh
-gdtest res://test/test_player.gd::test_jump   # bypasses pool; full stderr visible
+gdtest res://test/test_player.gd::test_jump   # bypasses the pool; full stderr visible
 ```
