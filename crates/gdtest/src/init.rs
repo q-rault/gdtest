@@ -45,6 +45,16 @@ const EDITOR_ASSETS: &[Asset] = &[
     asset!("addons/gdtest_editor/test_panel.gd.uid"),
 ];
 
+/// The addon files gdtest ships, as `(path in the project, contents)`: the
+/// runtime harness under `addons/gdtest/` and the editor panel under
+/// `addons/gdtest_editor/`.
+pub fn addon_files() -> impl Iterator<Item = (&'static str, &'static str)> {
+    RUNTIME_ASSETS
+        .iter()
+        .chain(EDITOR_ASSETS)
+        .map(|asset| (asset.rel_path, asset.contents))
+}
+
 pub struct InitOptions {
     pub project_path: String,
     pub editor: bool,
