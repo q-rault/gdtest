@@ -77,6 +77,9 @@ Godot editor plugin:
 2. Enable **gdtest Editor** in Project -> Project Settings -> Plugins.
 3. The panel resolves the gdtest binary in this order:
    - `GDTEST_BIN`
+   - `.gdsuite/tools/gdtest/bin/gdtest` (`gdtest.exe` on Windows), where
+     [gdsuite](https://github.com/q-rault/gdsuite) installs gdtest, so a
+     gdsuite-managed project needs no extra setup
    - nearby project-local binaries
    - `gdtest` on `PATH`
 
