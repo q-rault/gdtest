@@ -624,6 +624,8 @@ impl JsonReporter {
                 worker: *worker,
                 line,
             }),
+            // Kept for test impact analysis, not reported.
+            PoolEvent::Uses { .. } => None,
         };
         if let Some(e) = mapped
             && let Ok(line) = serde_json::to_string(&e)

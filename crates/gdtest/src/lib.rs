@@ -176,6 +176,14 @@ struct Cli {
     #[arg(long, value_name = "REF")]
     changed_since: Option<String>,
 
+    /// Run only the tests a change to this file can affect: the tests that
+    /// use it, directly or through other scripts, scenes and resources
+    /// (`extends`, `preload`/`load`, `class_name`, autoloads,
+    /// `ext_resource`). Repeat it for several files. Combine with `--list`
+    /// to see the tests without running them.
+    #[arg(long, value_name = "FILE", action = clap::ArgAction::Append)]
+    affected_by: Vec<String>,
+
     /// Run mutation testing on a GDScript source file.
     /// For each single-point mutation (operator/literal replacement), the test
     /// suite is re-run to check whether a test catches the change ("killed").
@@ -439,6 +447,7 @@ where
         cli.bench,
         cli.changed_only,
         cli.changed_since,
+        cli.affected_by,
         cli.output_dir,
     )
 }
@@ -747,6 +756,7 @@ async fn run_pool(
     bench_mode: bool,
     changed_only: bool,
     changed_since: Option<String>,
+    affected_by: Vec<String>,
     output_dir: Option<String>,
 ) -> anyhow::Result<()> {
     let project_abs = PathBuf::from(&cfg.project_path).canonicalize()?;
@@ -768,27 +778,62 @@ async fn run_pool(
     let exclude = config::load_exclude(&cfg.project_path);
     let mut files = gdtest_analysis::resolve(&file_targets, &project_abs, &patterns, &exclude)?;
 
-    // Apply test impact analysis: keep only files affected by changed sources.
-    if changed_only || changed_since.is_some() {
-        let since_ref = changed_since.as_deref();
-        let changed = get_changed_gd_files(&project_abs, since_ref);
+    // Test impact analysis: keep only the test files the changes can affect.
+    let changed: Option<(Vec<String>, String)> = if !affected_by.is_empty() {
+        let mut paths = Vec::new();
+        for path in &affected_by {
+            paths.push(normalize_res(path, &project_abs)?);
+        }
+        Some((paths, "the given files".to_string()))
+    } else if changed_only || changed_since.is_some() {
+        let changed = get_changed_files(&project_abs, changed_since.as_deref());
         if changed.is_empty() {
-            eprintln!("gdtest: test impact: no changed .gd files found");
+            eprintln!("gdtest: test impact: no changed files found");
             return Ok(());
         }
-        let changed_set: std::collections::HashSet<String> = changed.into_iter().collect();
-        let (_, reverse) = gdtest_analysis::deps::build_dep_graph(&project_abs);
-        let affected = gdtest_analysis::deps::affected_files(&changed_set, &reverse);
-        let total = files.len();
-        files.retain(|f| changed_set.contains(f) || affected.contains(f));
-        eprintln!(
-            "gdtest: test impact: {}/{} test file(s) affected by changes",
-            files.len(),
-            total,
-        );
-        if files.is_empty() {
-            eprintln!("gdtest: no tests affected — nothing to run");
-            return Ok(());
+        Some((changed, "changes".to_string()))
+    } else {
+        None
+    };
+    if let Some((changed, what)) = changed {
+        let graph = gdtest_analysis::deps::Graph::build(&project_abs);
+        let mut test_files: Vec<String> = files.clone();
+        test_files.extend(explicit_tests.iter().map(|t| t.display_script.clone()));
+        match graph.impact(&changed, &test_files) {
+            gdtest_analysis::deps::Impact::All { reason } => {
+                eprintln!("gdtest: test impact: every test, as {reason}");
+            }
+            gdtest_analysis::deps::Impact::Files(affected) => {
+                let total = files.len();
+                files.retain(|f| affected.contains(f));
+                explicit_tests.retain(|t| affected.contains(&t.display_script));
+                eprintln!(
+                    "gdtest: test impact: {}/{} test file(s) affected by {what}",
+                    files.len(),
+                    total,
+                );
+                let always: Vec<String> = test_files
+                    .iter()
+                    .filter(|t| graph.loads_unknown(t))
+                    .cloned()
+                    .collect();
+                if !always.is_empty() {
+                    let loaders: Vec<String> = graph.unknown_loaders(&always).into_iter().collect();
+                    eprintln!(
+                        "gdtest: test impact: {} of them always run: they use {}, which load \
+                         computed paths",
+                        always.len(),
+                        loaders.join(", "),
+                    );
+                }
+                if files.is_empty() && explicit_tests.is_empty() {
+                    eprintln!("gdtest: no tests affected — nothing to run");
+                    if list_only {
+                        emit_list(&[], rkind)?;
+                    }
+                    return Ok(());
+                }
+            }
         }
     }
 
@@ -1184,9 +1229,10 @@ fn do_rewrites(files: &[String], project_abs: &Path) -> anyhow::Result<HashMap<S
     Ok(map)
 }
 
-/// Return res:// paths of .gd files changed relative to HEAD (or `since_ref`).
+/// Return res:// paths of the files changed relative to HEAD (or
+/// `since_ref`): scripts, scenes, resources, data.
 /// Runs `git diff --name-only` + `git ls-files --others` for untracked files.
-fn get_changed_gd_files(project_abs: &Path, since_ref: Option<&str>) -> Vec<String> {
+fn get_changed_files(project_abs: &Path, since_ref: Option<&str>) -> Vec<String> {
     let mut paths: Vec<String> = Vec::new();
 
     // Tracked changes: staged + unstaged vs HEAD (or vs `since_ref`)
@@ -1203,7 +1249,7 @@ fn get_changed_gd_files(project_abs: &Path, since_ref: Option<&str>) -> Vec<Stri
     if let Ok(out) = cmd.output()
         && let Ok(text) = std::str::from_utf8(&out.stdout)
     {
-        for line in text.lines().filter(|l| l.ends_with(".gd")) {
+        for line in text.lines() {
             if let Ok(rp) = gdtest_analysis::to_res_path(&project_abs.join(line), project_abs) {
                 paths.push(rp);
             }
@@ -1221,7 +1267,7 @@ fn get_changed_gd_files(project_abs: &Path, since_ref: Option<&str>) -> Vec<Stri
         if let Ok(out2) = cmd2.output()
             && let Ok(text2) = std::str::from_utf8(&out2.stdout)
         {
-            for line in text2.lines().filter(|l| l.ends_with(".gd")) {
+            for line in text2.lines() {
                 if let Ok(rp) = gdtest_analysis::to_res_path(&project_abs.join(line), project_abs) {
                     paths.push(rp);
                 }
@@ -1346,6 +1392,7 @@ fn is_quick_single_run(cli: &Cli, targets: &[String]) -> bool {
         && cli.partition.is_none()
         && !cli.changed_only
         && cli.changed_since.is_none()
+        && cli.affected_by.is_empty()
 }
 
 fn normalize_res(path: &str, project_abs: &std::path::Path) -> anyhow::Result<String> {
@@ -1384,6 +1431,15 @@ mod tests {
         assert!(!quick(&["gdtest", "--reporter", "junit"]));
         assert!(!quick(&["gdtest", "--watch"]));
         assert!(!quick(&["gdtest", "--output-dir", "out"]));
+        assert!(!quick(&["gdtest", "--affected-by", "res://src/a.gd"]));
+        let (cli, _) = parse_matches(&[
+            "gdtest",
+            "--affected-by",
+            "res://a.gd",
+            "--affected-by",
+            "res://b.tscn",
+        ]);
+        assert_eq!(cli.affected_by, vec!["res://a.gd", "res://b.tscn"]);
         let (cli, _) = parse_matches(&["gdtest"]);
         assert!(!is_quick_single_run(&cli, &["res://test/a.gd".to_string()]));
     }

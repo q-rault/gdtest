@@ -1,12 +1,9 @@
 //! `--watch` mode: re-run on `.gd` file changes.
 //!
-//! Selective rerun: when every changed path resolves to a known test
-//! file in the current target set, the rerun is narrowed to just those
-//! files (typical TDD case: edit one test, only that test re-runs). Any
-//! change to an unknown / non-test `.gd` file falls back to a full
-//! rerun — conservative because tests may `preload`/`load` it. A future
-//! pass will grep for `preload`/`load` references and only
-//! invalidate the affected tests.
+//! Selective rerun: each change reruns only the test files it can affect,
+//! as the project's dependency graph tells (see `gdtest_analysis::deps`):
+//! a test file reruns itself, a script reruns the tests that use it,
+//! directly or through other scripts, scenes and resources.
 //!
 //! Ctrl-C: the loop selects on `tokio::signal::ctrl_c()` alongside the
 //! file-event channel. First SIGINT exits cleanly within ~1s, even
@@ -106,26 +103,31 @@ fn is_relevant(ev: &notify::Result<notify::Event>) -> bool {
     ) {
         return false;
     }
-    ev.paths
-        .iter()
-        .any(|p| p.extension().and_then(|e| e.to_str()) == Some("gd"))
+    ev.paths.iter().any(|p| is_project_file(p))
 }
 
 fn collect_gd_paths(ev: &notify::Result<notify::Event>) -> Vec<PathBuf> {
     let Ok(ev) = ev else { return Vec::new() };
     ev.paths
         .iter()
-        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("gd"))
+        .filter(|p| is_project_file(p))
         .cloned()
         .collect()
 }
 
-/// Convert a list of changed absolute paths into a narrowed set of
-/// test-file `res://…` paths, IF every change matches a known test
-/// file. Returns `None` for "fall back to the full set" — either no
-/// changes (initial run) or at least one change is to a non-test or
-/// unknown file (could be a dependency we can't statically prove safe
-/// to skip).
+/// A file a test may depend on: not in a hidden folder such as `.godot/`,
+/// and not one Godot writes beside a file (`.import`, `.uid`).
+fn is_project_file(path: &Path) -> bool {
+    let hidden = path.components().any(|c| {
+        let name = c.as_os_str().to_string_lossy();
+        name.starts_with('.') && name != "." && name != ".."
+    });
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    !hidden && !matches!(ext, "import" | "uid" | "tmp" | "")
+}
+
+/// The test files `changed` (absolute paths) can affect, or `None` to run
+/// every test: on the first run, or when the change affects every test.
 fn narrow_targets(
     changed: &[PathBuf],
     project: &Path,
@@ -135,41 +137,42 @@ fn narrow_targets(
         return None;
     }
     let project_abs = project.canonicalize().ok()?;
-    let known: HashSet<&str> = resolved_files.iter().map(|s| s.as_str()).collect();
-    let mut touched = HashSet::new();
+    let mut res_paths = Vec::new();
     for p in changed {
-        let abs = match p.canonicalize() {
-            Ok(a) => a,
-            Err(_) => return None, // path no longer exists (e.g. deleted) — full rerun
-        };
-        let res = match gdtest_analysis::to_res_path(&abs, &project_abs) {
-            Ok(r) => r,
-            Err(_) => return None, // outside the project — full rerun
-        };
-        if !known.contains(res.as_str()) {
-            return None; // unknown / non-test changed → full rerun
-        }
-        touched.insert(res);
+        // A deleted file no longer resolves: build its path by hand.
+        let abs = p.canonicalize().unwrap_or_else(|_| p.clone());
+        let rel = abs
+            .strip_prefix(&project_abs)
+            .or_else(|_| abs.strip_prefix(project))
+            .ok()?;
+        res_paths.push(format!(
+            "res://{}",
+            rel.to_string_lossy().replace('\\', "/")
+        ));
     }
-    Some(touched)
+    let graph = gdtest_analysis::deps::Graph::build(&project_abs);
+    match graph.impact(&res_paths, resolved_files) {
+        gdtest_analysis::deps::Impact::All { reason } => {
+            eprintln!("\ngdtest: {reason}: rerunning every test");
+            None
+        }
+        gdtest_analysis::deps::Impact::Files(files) => Some(files.into_iter().collect()),
+    }
 }
 
 async fn run_iteration(opts: &WatchOptions, changed: &[PathBuf]) -> Result<()> {
     let narrow = narrow_targets(changed, &opts.project_path, &opts.resolved_files);
 
-    if changed.is_empty() {
-        // First run — no narrowing message.
-    } else {
-        match &narrow {
-            Some(files) => {
-                eprintln!(
-                    "\ngdtest: change detected — rerunning {} test file(s)",
-                    files.len(),
-                );
-            }
-            None => {
-                eprintln!("\ngdtest: change detected — non-test file or unknown path, full rerun",);
-            }
+    // The first run has no change to report.
+    if !changed.is_empty()
+        && let Some(files) = &narrow
+    {
+        eprintln!(
+            "\ngdtest: change detected — rerunning {} test file(s)",
+            files.len(),
+        );
+        if files.is_empty() {
+            return Ok(());
         }
     }
 

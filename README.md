@@ -104,9 +104,10 @@ Common flags:
 | `--timeout-warn <MS>` | off | Warn on slow tests without failing them |
 | `--retries <N>` | `0` | Retry failing tests |
 | `--fail-fast` | off | Stop on first failure or error |
-| `--watch` | off | Re-run on `.gd` file changes |
+| `--watch` | off | Re-run the affected tests on each change |
 | `--partition count:N/M\|hash:N/M` | off | CI sharding |
 | `--changed-only` / `--changed-since <REF>` | off | Run impacted tests only |
+| `--affected-by <FILE>` | off | Run the tests a file can affect |
 | `--coverage` | off | Write `coverage/lcov.info` |
 | `--min-coverage <PCT>` | off | Fail below threshold |
 | `--html-report [PATH]` | off | Write standalone HTML report |

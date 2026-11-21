@@ -189,6 +189,7 @@ dependencies = [
  "gdsyntax",
  "regex",
  "serde",
+ "serde_json",
  "walkdir",
 ]
 

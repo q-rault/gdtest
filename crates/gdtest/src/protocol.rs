@@ -70,6 +70,11 @@ pub enum Event {
         name: String,
         message: String,
     },
+    /// The scenes and scripts of the nodes that entered the tree while the
+    /// test ran, sent before its result when `GDTEST_RECORD_USES=1`.
+    Uses {
+        paths: Vec<String>,
+    },
     /// Signals the end of a parameterized test batch. Sent after all
     /// per-case TestPass/Fail/Error events for one `func test_*()` that
     /// had a companion `func get_test_*_cases()`.
