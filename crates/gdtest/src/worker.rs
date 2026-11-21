@@ -94,6 +94,8 @@ impl Worker {
         if !cfg.plugins.is_empty() {
             cmd.env("GDTEST_PLUGINS", cfg.plugins.join(","));
         }
+        // The worker reports what each test used (see `PoolEvent::Uses`).
+        cmd.env("GDTEST_RECORD_USES", "1");
         let mut child = cmd
             .spawn()
             .with_context(|| format!("failed to spawn Godot at {}", cfg.godot_exe))?;

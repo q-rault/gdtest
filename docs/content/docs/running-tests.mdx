@@ -21,10 +21,49 @@ gdtest --list                            # print what would run, run nothing
 ```sh
 gdtest --changed-only                 # uncommitted changes (git diff HEAD)
 gdtest --changed-since origin/main    # everything changed on your branch
+gdtest --affected-by res://src/player.gd          # the tests a file can affect
+gdtest --affected-by res://src/player.gd --list   # which ones, without running them
 ```
 
-gdtest builds the dependency graph of your scripts and runs the tests that
-reach a changed file, directly or through other scripts.
+gdtest builds the dependency graph of the project and runs the test files
+that reach a changed file. A file uses:
+
+- in a script: what it `extends`, `preload`s or `load`s, any other
+  `"res://…"` or `"uid://…"` string, another script's `class_name` and an
+  autoload it names;
+- in a scene or a `.tres` resource: its `ext_resource`s.
+
+A test file reaches the files it uses, the files those use, and so on. A
+change to a scene reruns the tests that use the scene, and the tests of the
+scripts in it.
+
+Some changes affect every test: `project.godot`, `gdtest.toml`, an autoload,
+and the gdtest addon. Files opened with `FileAccess` or `DirAccess` are not
+followed, unless a `"res://…"` string names them: they are mostly saves and
+logs.
+
+gdtest also learns from the tests it runs, as Vitest learns a test's dynamic
+imports by running it. While a test runs, gdtest notes the scene and the
+script of every node it adds to the tree, and keeps them per test file in
+`.godot/gdtest/uses.json`. A test file then also depends on what it was seen
+using: the scenes it loaded with a computed path, and the scripts of those
+scenes. What a test file was seen using adds up over runs.
+
+A script that loads a computed path, such as `load(scene_path)`, may load
+any file. Until a test that reaches it has run once, that test runs on every
+change; gdtest names these scripts. Resources that are not nodes, such as a
+`.tres` loaded with a computed path, are not seen: say where such a script
+loads from with a comment, and it depends on that folder:
+
+```gdscript
+# gdtest: loads res://gameplay/*.tscn
+func restore(data: Dictionary) -> Node:
+    return load(data.scene_path).instantiate()
+```
+
+`res://gameplay/` is every file of the folder and the folders in it;
+`res://gameplay/*.tscn` only its scenes. A string with a known folder, as
+`load("res://items/" + id)`, needs no comment.
 
 ### Watch mode
 
@@ -32,7 +71,8 @@ reach a changed file, directly or through other scripts.
 gdtest test/ --watch
 ```
 
-Runs the targets, then again after every `.gd` change, until Ctrl-C.
+Runs the targets, then after each change to a file of the project, the test
+files it can affect, as above, until Ctrl-C.
 
 ## Tags
 

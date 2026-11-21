@@ -46,7 +46,7 @@ wins over the config file.
 | `--fail-fast` | `GDTEST_FAIL_FAST` | off | Stop after the first failure or error |
 | `--retries <N>` | `GDTEST_RETRIES` | `0` | Re-run a failing test up to N more times; timeouts and crashes are not retried |
 | `--profile <NAME>` | — | — | Activate a `[profile.NAME]` block from the config |
-| `--watch` | — | off | Re-run the targets after every `.gd` change; Ctrl-C to exit |
+| `--watch` | — | off | Re-run the affected tests after every change; Ctrl-C to exit |
 | `--no-rewrite` | — | off | Run `assert(a == b)` as written instead of rewriting it for rich diffs |
 | `--update-snapshots` | — | off | Accept new or changed [snapshot](/docs/snapshots) values |
 | `--seed <N>` | `GDTEST_SEED` | random | Fix the RNG seed of [`forall` property tests](/docs/assertions#property-tests) |
@@ -61,6 +61,7 @@ wins over the config file.
 | `--exclude-tag <TAG>` | `GDTEST_EXCLUDE_TAGS` | Skip tests with this tag (repeatable) |
 | `--changed-only` | — | Only tests affected by uncommitted changes (`git diff HEAD`) |
 | `--changed-since <REF>` | — | Only tests affected by changes since a git ref, e.g. `origin/main` |
+| `--affected-by <FILE>` | — | Only tests a change to this file can [affect](/docs/running-tests#only-what-your-change-affects) (repeatable) |
 | `--partition <SPEC>` | — | Run one shard of the suite (see [below](#partitioning-ci-sharding)) |
 | `--list` | — | Print the discovered tests as `file :: func` and exit |
 

@@ -100,6 +100,12 @@ pub enum PoolEvent {
         worker: usize,
         line: String,
     },
+    /// What a test of `file` used while it ran: recorded for test impact
+    /// analysis, not reported.
+    Uses {
+        file: String,
+        paths: Vec<String>,
+    },
 }
 
 /// How aggressively the pool recycles workers between tests.
@@ -152,6 +158,8 @@ pub async fn run(items: Vec<TestItem>, opts: PoolOptions) -> Result<(Summary, Ve
 
     let mut summary = Summary::default();
     let mut event_log: Vec<PoolEvent> = Vec::new();
+    let mut uses: std::collections::HashMap<String, std::collections::BTreeSet<String>> =
+        std::collections::HashMap::new();
 
     // Queue stores (item, retries_remaining) so each item carries its own
     // retry budget without a shared map.
@@ -207,6 +215,9 @@ pub async fn run(items: Vec<TestItem>, opts: PoolOptions) -> Result<(Summary, Ve
         tokio::select! {
             ev = ev_rx.recv() => {
                 match ev {
+                    Some(PoolEvent::Uses { file, paths }) => {
+                        uses.entry(file).or_default().extend(paths);
+                    }
                     Some(ev) => {
                         reporter.on_event(&ev);
                         summary.apply(&ev);
@@ -235,6 +246,12 @@ pub async fn run(items: Vec<TestItem>, opts: PoolOptions) -> Result<(Summary, Ve
         }
     }
     reporter.finish(&summary);
+    if !uses.is_empty() {
+        let project = std::path::Path::new(&cfg.project_path);
+        if let Err(e) = gdtest_analysis::deps::record_uses(project, &uses) {
+            eprintln!("gdtest: could not save what the tests used: {e:#}");
+        }
+    }
 
     for t in worker_tasks {
         let _ = t.await;
@@ -494,6 +511,12 @@ async fn run_one_test(
                     // directly; TestBatchDone signals the RunTest is complete.
                     Ok(Event::TestBatchDone) => {
                         return (false, None, stderr_rx);
+                    }
+                    Ok(Event::Uses { paths }) => {
+                        let _ = ev_tx.send(PoolEvent::Uses {
+                            file: item.display_script.clone(),
+                            paths,
+                        });
                     }
                     Ok(_) => {}
                     Err(e) => {

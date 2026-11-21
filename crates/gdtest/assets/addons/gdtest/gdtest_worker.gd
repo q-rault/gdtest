@@ -79,6 +79,12 @@ var _world_counter: int = 0
 var _reporter_plugins: Array = []  # instances of Gdt.GdtReporter subclasses
 var _fixture_plugins: Array = []   # instances of Gdt.GdtFixture subclasses
 var _current_test_file: String = ""  # res:// path of the currently-running test file
+# The scenes and scripts of the nodes that entered the tree during the
+# current test, sent as a `uses` event before its result when gdtest asks
+# (GDTEST_RECORD_USES=1). gdtest learns from them which files each test
+# file really uses, beyond what its source says (`load(scene_path)`).
+var _record_uses: bool = false
+var _uses: Dictionary = {}
 # Shared suite instance for files with before()/before_all() hooks (RunTest path).
 var _active_suite_script: String = ""
 var _active_suite_instance: Object = null
@@ -128,6 +134,9 @@ class TestWorldImpl extends RefCounted:
 
 func _init() -> void:
 	OS.add_logger(_script_error_logger)
+	_record_uses = OS.get_environment("GDTEST_RECORD_USES") == "1"
+	if _record_uses:
+		node_added.connect(_on_node_added)
 	Engine.set_meta("gdt_harness", self)
 	load("res://addons/gdtest/gdunit4_chain.gd")
 	load("res://addons/gdtest/gdunit4_compat.gd")
@@ -1083,7 +1092,29 @@ func _with_script_errors(obj: Dictionary) -> Dictionary:
 				obj["failures"].append("script error: %s" % error)
 	return obj
 
+func _on_node_added(node: Node) -> void:
+	_note_use(node.scene_file_path)
+	var script: Variant = node.get_script()
+	if script is Script:
+		_note_use(script.resource_path)
+
+func _note_use(path: String) -> void:
+	# A built-in script is "res://scene.tscn::GDScript_x": its scene.
+	path = path.get_slice("::", 0)
+	if path.begins_with("res://") and not path.begins_with("res://addons/gdtest/"):
+		_uses[path] = true
+
+const _RESULT_EVENTS := ["test_pass", "test_fail", "test_error", "test_skip", "test_pending"]
+
 func _send(obj: Dictionary) -> void:
+	if _record_uses:
+		var event: String = obj.get("event", "")
+		if event == "test_start":
+			_uses.clear()
+		elif event in _RESULT_EVENTS:
+			# Sent even when empty: it says the test ran, and used nothing more.
+			print(OUT_PREFIX + JSON.stringify({"event": "uses", "paths": _uses.keys()}))
+			_uses.clear()
 	obj = _with_script_errors(obj)
 	_notify_reporters(obj)
 	print(OUT_PREFIX + JSON.stringify(obj))
