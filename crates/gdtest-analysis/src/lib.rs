@@ -62,11 +62,15 @@ pub fn resolve(
         .with_context(|| format!("project path does not exist: {}", project_path.display()))?;
     let mut out: Vec<String> = Vec::new();
     for input in inputs {
-        if let Some(res) = input.strip_prefix("res://") {
-            out.push(format!("res://{res}"));
-            continue;
-        }
-        let path = PathBuf::from(input);
+        let path = match input.strip_prefix("res://") {
+            // A folder is walked like any other; a file is kept as given.
+            Some(res) if project_abs.join(res).is_dir() => PathBuf::from(res),
+            Some(res) => {
+                out.push(format!("res://{res}"));
+                continue;
+            }
+            None => PathBuf::from(input),
+        };
         let abs = if path.is_absolute() {
             path.clone()
         } else {
@@ -772,6 +776,26 @@ class describe_Outer:
         let resolved = resolve(&inputs, &project, &patterns, &excludes).unwrap();
 
         assert_eq!(resolved, vec!["res://test/cases/test_ok.gd"]);
+
+        fs::remove_dir_all(project).ok();
+    }
+
+    #[test]
+    fn resolve_walks_res_folders_like_relative_ones() {
+        let project = make_temp_project("resolve-res-dir");
+        fs::create_dir_all(project.join("test/cases")).unwrap();
+        fs::write(
+            project.join("test/cases/test_ok.gd"),
+            "extends RefCounted
+",
+        )
+        .unwrap();
+        let patterns = vec!["test/**/*.gd".to_string()];
+
+        for input in ["res://test/", "res://test", "res://test/cases/test_ok.gd"] {
+            let resolved = resolve(&[input.to_string()], &project, &patterns, &[]).unwrap();
+            assert_eq!(resolved, vec!["res://test/cases/test_ok.gd"], "{input}");
+        }
 
         fs::remove_dir_all(project).ok();
     }

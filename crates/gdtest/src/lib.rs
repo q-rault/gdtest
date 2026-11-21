@@ -362,7 +362,7 @@ where
 
     // Single-test short-circuit (M1 mode): `script::func` on its own. Pool
     // adds frame-tick latency that single-test focus runs don't need.
-    if targets.len() == 1 && targets[0].contains("::") && !cli.list && cli.filter.is_none() {
+    if is_quick_single_run(&cli, &targets) {
         let cfg = cfg_or_die(&cli)?;
         if !cli.no_auto_import {
             let single = targets[0]
@@ -1324,6 +1324,30 @@ async fn run_mutate(
     }
 }
 
+/// Whether `targets` is one `script::func` that the quick single-test run
+/// can handle: it prints the pretty output and knows no other option, so any
+/// other reporter or run option goes through the pool, which handles them.
+fn is_quick_single_run(cli: &Cli, targets: &[String]) -> bool {
+    targets.len() == 1
+        && targets[0].contains("::")
+        && matches!(cli.reporter, None | Some(reporter::ReporterKind::Pretty))
+        && !cli.list
+        && cli.filter.is_none()
+        && cli.tag.is_empty()
+        && cli.exclude_tag.is_empty()
+        && !cli.watch
+        && cli.output_dir.is_none()
+        && !cli.coverage
+        && cli.html_report.is_none()
+        && !cli.bench
+        && cli.mutate.is_none()
+        && !cli.update_snapshots
+        && cli.retries.unwrap_or(0) == 0
+        && cli.partition.is_none()
+        && !cli.changed_only
+        && cli.changed_since.is_none()
+}
+
 fn normalize_res(path: &str, project_abs: &std::path::Path) -> anyhow::Result<String> {
     if path.starts_with("res://") {
         return Ok(path.to_string());
@@ -1345,6 +1369,23 @@ mod tests {
         let matches = Cli::command().try_get_matches_from(args).unwrap();
         let cli = Cli::from_arg_matches(&matches).unwrap();
         (cli, matches)
+    }
+
+    #[test]
+    fn only_a_plain_pretty_single_test_takes_the_quick_run() {
+        let target = vec!["res://test/a.gd::test_b".to_string()];
+        let quick = |args: &[&str]| {
+            let (cli, _) = parse_matches(args);
+            is_quick_single_run(&cli, &target)
+        };
+        assert!(quick(&["gdtest"]));
+        assert!(quick(&["gdtest", "--reporter", "pretty"]));
+        assert!(!quick(&["gdtest", "--reporter", "json"]));
+        assert!(!quick(&["gdtest", "--reporter", "junit"]));
+        assert!(!quick(&["gdtest", "--watch"]));
+        assert!(!quick(&["gdtest", "--output-dir", "out"]));
+        let (cli, _) = parse_matches(&["gdtest"]);
+        assert!(!is_quick_single_run(&cli, &["res://test/a.gd".to_string()]));
     }
 
     #[test]
