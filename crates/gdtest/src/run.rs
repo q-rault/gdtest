@@ -53,10 +53,21 @@ fn print_result(ev: &Event) -> i32 {
             println!("{} {name} ({})", "✓".green(), fmt_duration(*us));
             0
         }
-        Event::TestFail { name, us, failures } => {
+        Event::TestFail { name, us, failures, details } => {
             println!("{} {name} ({})", "✗".red(), fmt_duration(*us));
-            for f in failures {
-                println!("    {} {f}", "→".red());
+            for (index, f) in failures.iter().enumerate() {
+                let mut lines = f.lines();
+                if let Some(first) = lines.next() {
+                    println!("    {} {first}", "→".red());
+                    for rest in lines {
+                        println!("      {rest}");
+                    }
+                }
+                if let Some(detail) = details.get(index) {
+                    for line in crate::reporter::detail_lines(detail) {
+                        println!("      {line}");
+                    }
+                }
             }
             1
         }

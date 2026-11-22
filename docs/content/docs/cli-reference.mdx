@@ -93,7 +93,7 @@ wins over the config file.
 
 **`tap`** — TAP v14; works with `tap-junit`, `tap-parser` and most CI TAP consumers.
 
-**`json`** — one JSON event per line, for tools that read results as they arrive.
+**`json`** — one JSON event per line, for tools that read results as they arrive. A `test_fail` event has `failures`, the messages, and `details`: for each, its `file`, `line`, `function`, `code` and `locals`, when known.
 
 **`junit`** — JUnit XML on stdout. Redirect it to a file for GitHub Actions or GitLab CI test reports.
 

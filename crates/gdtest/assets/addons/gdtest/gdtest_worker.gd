@@ -54,6 +54,13 @@ var _script_error_logger := ScriptErrorLogger.new()
 const HARNESS_VERSION := "0.2.9"
 
 var _current_failures: Array[String] = []
+# One per failure of _current_failures: where it happened, the line of code,
+# and the test's local variables then. Sent as "details".
+var _current_details: Array[Dictionary] = []
+# "res://path.gd" -> its lines, read once, for the code of a failure.
+var _source_lines: Dictionary = {}
+const DETAILS_MAX_LOCALS := 16
+const DETAILS_MAX_VALUE := 160
 var _pending_msg: String = ""
 var _skip_msg: String = ""
 var _snapshot_counter: int = 0
@@ -157,9 +164,16 @@ func _finalize() -> void:
 		_stdin_thread.wait_to_finish()
 
 func _stdin_reader_loop() -> void:
+	var shutdown_sent := false
 	while not _stop_requested:
 		var line: String = OS.read_string_from_stdin(4096)
 		if line.is_empty():
+			# gdtest sends `shutdown` before it closes stdin. Without it, gdtest
+			# was killed (an editor stopping a run): end now rather than finish
+			# the current test, which can take long and slows the next run.
+			if not shutdown_sent:
+				OS.kill(OS.get_process_id())
+				return
 			_cmd_mutex.lock()
 			_cmd_queue.append("__eof")
 			_cmd_mutex.unlock()
@@ -167,6 +181,8 @@ func _stdin_reader_loop() -> void:
 		var trimmed: String = line.strip_edges()
 		if trimmed.is_empty():
 			continue
+		if trimmed.contains('"shutdown"'):
+			shutdown_sent = true
 		_cmd_mutex.lock()
 		_cmd_queue.append(trimmed)
 		_cmd_mutex.unlock()
@@ -239,8 +255,84 @@ func skip(msg: String = "") -> void:
 # Appends a failure when cond is false. Returns cond so callers can chain.
 func expect(cond: bool, msg: String = "") -> bool:
 	if not cond:
-		_current_failures.append(msg if msg != "" else "expectation failed")
+		var message := msg if msg != "" else "expectation failed"
+		_current_failures.append(message)
+		_current_details.append(_failure_details(message))
 	return cond
+
+
+# Where a failure happened: the first frame outside gdtest, which is the test
+# or a helper it called, with its line of code and its local variables.
+func _failure_details(message: String) -> Dictionary:
+	var details := {"message": message}
+	var stack := get_stack()
+	var frame := -1
+	for i in stack.size():
+		if not str(stack[i].source).begins_with("res://addons/gdtest/"):
+			frame = i
+			break
+	if frame < 0:
+		return details
+	var file := str(stack[frame].source)
+	var line := int(stack[frame].line)
+	details["file"] = file
+	details["line"] = line
+	details["function"] = str(stack[frame].function)
+	var code := _source_line(file, line)
+	if code != "":
+		details["code"] = code
+	var locals := _locals_at(file, line)
+	if not locals.is_empty():
+		details["locals"] = locals
+	return details
+
+
+func _source_line(file: String, line: int) -> String:
+	if not _source_lines.has(file):
+		_source_lines[file] = FileAccess.get_file_as_string(file).split("\n")
+	var lines: PackedStringArray = _source_lines[file]
+	return lines[line - 1].strip_edges() if line >= 1 and line <= lines.size() else ""
+
+
+# The local variables of the frame at file:line: [{name, value}]. Godot 4.5
+# and newer can read them; older versions give none.
+func _locals_at(file: String, line: int) -> Array:
+	var locals := []
+	if not Engine.has_method("capture_script_backtraces"):
+		return locals
+	for backtrace: Object in Engine.call("capture_script_backtraces", true):
+		for i: int in backtrace.call("get_frame_count"):
+			if backtrace.call("get_frame_file", i) != file or backtrace.call("get_frame_line", i) != line:
+				continue
+			var count: int = mini(backtrace.call("get_local_variable_count", i), DETAILS_MAX_LOCALS)
+			for j in count:
+				locals.append({
+					"name": str(backtrace.call("get_local_variable_name", i, j)),
+					"value": value_text(backtrace.call("get_local_variable_value", i, j)),
+				})
+			return locals
+	return locals
+
+
+# A value as it would be written in code, shortened: "abi" with its quotes,
+# &"name" for a StringName, 1.0 for a float, an object by its class.
+static func value_text(value: Variant) -> String:
+	var text: String
+	match typeof(value):
+		TYPE_OBJECT:
+			if value == null or not is_instance_valid(value):
+				text = "null"
+			else:
+				var script: Script = value.get_script()
+				var name: String = script.get_global_name() if script != null else ""
+				text = "<%s#%d>" % [name if name != "" else value.get_class(), value.get_instance_id()]
+		TYPE_NIL:
+			text = "null"
+		_:
+			text = var_to_str(value).replace("\n", " ")
+	if text.length() > DETAILS_MAX_VALUE:
+		text = text.substr(0, DETAILS_MAX_VALUE - 1) + "…"
+	return text
 
 # Returns the number of failures recorded so far in the current test.
 # Used by assert_all to detect whether a callable block added new failures.
@@ -252,6 +344,8 @@ func failure_count() -> int:
 func trim_failures(n: int) -> void:
 	while _current_failures.size() > n:
 		_current_failures.pop_back()
+	while _current_details.size() > n:
+		_current_details.pop_back()
 
 # ── Snapshot assertions ────────────────────────────────────────────
 #
@@ -411,6 +505,7 @@ func _release_test_instance(instance: Object, instance_in_tree: bool) -> void:
 
 func _run_test(script_path: String, func_name: String) -> void:
 	_current_failures.clear()
+	_current_details.clear()
 	_pending_msg = ""
 	_skip_msg = ""
 	_snapshot_counter = 0
@@ -521,6 +616,7 @@ func _run_test(script_path: String, func_name: String) -> void:
 			"name": func_name,
 			"us": us,
 			"failures": _current_failures.duplicate(),
+			"details": _current_details.duplicate(),
 			"heap_delta_bytes": heap_delta,
 		})
 	# Tear down the container only if one was actually created. Pure
@@ -543,6 +639,7 @@ func _run_test(script_path: String, func_name: String) -> void:
 # is managed by the caller.
 func _run_case_on_instance(instance: Object, script_path: String, func_name: String, case_name: String, case_args: Array) -> void:
 	_current_failures.clear()
+	_current_details.clear()
 	_pending_msg = ""
 	_skip_msg = ""
 	if instance.has_method("before_each"):
@@ -570,7 +667,7 @@ func _run_case_on_instance(instance: Object, script_path: String, func_name: Str
 	elif _current_failures.is_empty():
 		_send({"event": "test_pass", "name": case_name, "us": us, "heap_delta_bytes": heap_delta})
 	else:
-		_send({"event": "test_fail", "name": case_name, "us": us, "failures": _current_failures.duplicate(), "heap_delta_bytes": heap_delta})
+		_send({"event": "test_fail", "name": case_name, "us": us, "failures": _current_failures.duplicate(), "details": _current_details.duplicate(), "heap_delta_bytes": heap_delta})
 	if _current_container != null:
 		var c := _current_container
 		_current_container = null
@@ -581,6 +678,7 @@ func _run_case_on_instance(instance: Object, script_path: String, func_name: Str
 # Frees the instance when done.
 func _run_describe_test(instance: Object, func_name: String, display_name: String) -> void:
 	_current_failures.clear()
+	_current_details.clear()
 	_pending_msg = ""
 	_skip_msg = ""
 	if not instance.has_method(func_name):
@@ -612,7 +710,7 @@ func _run_describe_test(instance: Object, func_name: String, display_name: Strin
 	elif _current_failures.is_empty():
 		_send({"event": "test_pass", "name": display_name, "us": us, "heap_delta_bytes": heap_delta})
 	else:
-		_send({"event": "test_fail", "name": display_name, "us": us, "failures": _current_failures.duplicate(), "heap_delta_bytes": heap_delta})
+		_send({"event": "test_fail", "name": display_name, "us": us, "failures": _current_failures.duplicate(), "details": _current_details.duplicate(), "heap_delta_bytes": heap_delta})
 	if _current_container != null:
 		var c := _current_container
 		_current_container = null
@@ -667,6 +765,7 @@ func _run_file(script_path: String) -> void:
 # instance — the caller owns its lifetime.
 func _run_test_on_instance(instance: Object, script_path: String, func_name: String) -> void:
 	_current_failures.clear()
+	_current_details.clear()
 	_pending_msg = ""
 	_skip_msg = ""
 	if not instance.has_method(func_name):
@@ -701,7 +800,7 @@ func _run_test_on_instance(instance: Object, script_path: String, func_name: Str
 	elif _current_failures.is_empty():
 		_send({"event": "test_pass", "name": func_name, "us": us, "heap_delta_bytes": heap_delta})
 	else:
-		_send({"event": "test_fail", "name": func_name, "us": us, "failures": _current_failures.duplicate(), "heap_delta_bytes": heap_delta})
+		_send({"event": "test_fail", "name": func_name, "us": us, "failures": _current_failures.duplicate(), "details": _current_details.duplicate(), "heap_delta_bytes": heap_delta})
 	if _current_container != null:
 		var c := _current_container
 		_current_container = null

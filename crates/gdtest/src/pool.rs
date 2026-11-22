@@ -72,6 +72,8 @@ pub enum PoolEvent {
         name: String,
         us: u64,
         failures: Vec<String>,
+        /// Where each failure happened, when the harness says.
+        details: Vec<crate::protocol::FailureDetail>,
     },
     TestError {
         worker: usize,
@@ -462,12 +464,13 @@ async fn run_one_test(
                             return (false, Some(ev), stderr_rx);
                         }
                     }
-                    Ok(Event::TestFail { name, us, mut failures }) => {
+                    Ok(Event::TestFail { name, us, mut failures, details }) => {
                         for e in runtime_errors.drain(..) {
                             failures.push(format!("runtime error: {e}"));
                         }
                         let ev = PoolEvent::TestFail {
                             worker: id, file: item.display_script.clone(), name: name.clone(), us, failures,
+                            details,
                         };
                         // Parameterized case result: forward and keep looping.
                         if name.contains('[') {

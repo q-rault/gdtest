@@ -5,6 +5,29 @@ description: Choose which tests run, tag them, measure coverage, benchmark, and 
 
 Every flag below is listed in the [CLI Reference](/docs/cli-reference).
 
+## Reading a failure
+
+A failed assertion says what it expected and what it got, written as in
+GDScript, so `"1"` and `1`, or `1` and `1.0`, can be told apart. Then where it
+failed: the file and line of the test (or of the helper that called the
+assertion), that line of code, and the test's local variables at that moment:
+
+```text
+✗ res://test/unit/test_math.gd :: test_compares_names (3.00 ms)
+    → expected: "abis"
+           got: "abi"
+      at res://test/unit/test_math.gd:11
+        11 | assert_eq(name, "abis")
+      locals: abilities = ["q", "w"], name = "abi"
+```
+
+Godot gives the local variables only when the project turns on **Project
+Settings → Debug → GDScript → Always Track Local Variables**
+(`debug/settings/gdscript/always_track_local_variables`), which Godot 4.5 and
+newer have. It costs nothing when you run the game from the editor, which
+tracks them already. Without it, a failure still says where it happened. The
+JSON reporter sends the same as `details` on each `test_fail` event.
+
 ## Choosing what runs
 
 ```sh

@@ -9,6 +9,31 @@ use serde::{Deserialize, Serialize};
 
 pub const GDTEST_OUT_PREFIX: &str = "GDTEST_OUT:";
 
+/// Where an assertion failed, sent with its message by harness 0.3.0 and
+/// newer: the file and line of the test (or of the helper it called), that
+/// line of code, and the local variables of that function then.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FailureDetail {
+    pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub function: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub locals: Vec<Local>,
+}
+
+/// A local variable, its value as GDScript would write it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Local {
+    pub name: String,
+    pub value: String,
+}
+
 /// Orchestrator -> worker. Tag field is `cmd`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
@@ -55,6 +80,9 @@ pub enum Event {
         name: String,
         us: u64,
         failures: Vec<String>,
+        /// One per failure, in the same order, when the harness sends them.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        details: Vec<FailureDetail>,
     },
     TestError {
         name: String,
@@ -167,6 +195,7 @@ mod tests {
                 name: "test_foo".into(),
                 us: 42,
                 failures: vec!["expected 1 got 2".into()],
+                details: Vec::new(),
             },
             r#"{"event":"test_fail","name":"test_foo","us":42,"failures":["expected 1 got 2"]}"#,
         );
