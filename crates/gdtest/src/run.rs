@@ -53,7 +53,12 @@ fn print_result(ev: &Event) -> i32 {
             println!("{} {name} ({})", "✓".green(), fmt_duration(*us));
             0
         }
-        Event::TestFail { name, us, failures, details } => {
+        Event::TestFail {
+            name,
+            us,
+            failures,
+            details,
+        } => {
             println!("{} {name} ({})", "✗".red(), fmt_duration(*us));
             for (index, f) in failures.iter().enumerate() {
                 let mut lines = f.lines();

@@ -47,7 +47,9 @@ pub async fn run(script: &str, funcs: &[String], cfg: &Config) -> Result<()> {
                 test_us_total += us as u128;
                 println!("pass,{name},{dispatch_us},{us}");
             }
-            Event::TestFail { name, us, failures, .. } => {
+            Event::TestFail {
+                name, us, failures, ..
+            } => {
                 fail += 1;
                 test_us_total += us as u128;
                 println!("fail,{name},{dispatch_us},{us} # {}", failures.join(" | "));
