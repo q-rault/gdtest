@@ -11,6 +11,34 @@ use owo_colors::OwoColorize;
 use serde::Serialize;
 
 use crate::pool::PoolEvent;
+use crate::protocol::FailureDetail;
+
+/// The lines that say where a failure happened, after its message:
+///
+/// ```text
+/// at res://test/unit/test_math.gd:9
+///   9 | assert_eq("abi", "abis")
+/// locals: name = "abi", count = 2
+/// ```
+pub fn detail_lines(detail: &FailureDetail) -> Vec<String> {
+    let mut lines = Vec::new();
+    let (Some(file), Some(line)) = (&detail.file, detail.line) else {
+        return lines;
+    };
+    lines.push(format!("at {file}:{line}"));
+    if let Some(code) = &detail.code {
+        lines.push(format!("  {line} | {code}"));
+    }
+    if !detail.locals.is_empty() {
+        let locals: Vec<String> = detail
+            .locals
+            .iter()
+            .map(|local| format!("{} = {}", local.name, local.value))
+            .collect();
+        lines.push(format!("locals: {}", locals.join(", ")));
+    }
+    lines
+}
 
 #[derive(clap::ValueEnum, serde::Deserialize, Debug, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
@@ -207,6 +235,7 @@ impl PrettyReporter {
                 name,
                 us,
                 failures,
+                details,
                 ..
             } => {
                 self.completed += 1;
@@ -218,12 +247,17 @@ impl PrettyReporter {
                     file.dimmed(),
                     fmt_us(*us),
                 );
-                for f in failures {
+                for (index, f) in failures.iter().enumerate() {
                     let mut lines = f.lines();
                     if let Some(first) = lines.next() {
                         let _ = writeln!(stdout, "    {} {first}", "→".red());
                         for rest in lines {
                             let _ = writeln!(stdout, "      {rest}");
+                        }
+                    }
+                    if let Some(detail) = details.get(index) {
+                        for line in detail_lines(detail) {
+                            let _ = writeln!(stdout, "      {}", line.dimmed());
                         }
                     }
                 }
@@ -505,6 +539,8 @@ enum JsonEvent<'a> {
         name: &'a str,
         us: u64,
         failures: &'a [String],
+        #[serde(skip_serializing_if = "<[FailureDetail]>::is_empty")]
+        details: &'a [FailureDetail],
     },
     TestError {
         worker: usize,
@@ -571,12 +607,14 @@ impl JsonReporter {
                 name,
                 us,
                 failures,
+                details,
             } => Some(JsonEvent::TestFail {
                 worker: *worker,
                 file,
                 name,
                 us: *us,
                 failures,
+                details,
             }),
             PoolEvent::TestError {
                 worker,
@@ -683,15 +721,27 @@ impl JunitReporter {
                 name,
                 us,
                 failures,
+                details,
                 ..
             } => {
                 let time_s = *us as f64 / 1_000_000.0;
                 self.total_time_s += time_s;
+                let text: Vec<String> = failures
+                    .iter()
+                    .enumerate()
+                    .map(|(index, f)| {
+                        let mut lines = vec![f.clone()];
+                        if let Some(detail) = details.get(index) {
+                            lines.extend(detail_lines(detail));
+                        }
+                        lines.join("\n")
+                    })
+                    .collect();
                 self.cases.push(JunitCase {
                     classname: file.clone(),
                     name: name.clone(),
                     time_s,
-                    failure: Some(failures.join("\n")),
+                    failure: Some(text.join("\n")),
                 });
             }
             PoolEvent::TestError {

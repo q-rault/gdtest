@@ -61,7 +61,7 @@ Events (worker → orchestrator, on stdout, prefixed `GDTEST_OUT:`):
 {"event":"ready"}
 {"event":"test_start","name":"test_bar"}
 {"event":"test_pass","name":"test_bar","us":1234}
-{"event":"test_fail","name":"test_bar","us":42,"failures":["expected 1 == 2"]}
+{"event":"test_fail","name":"test_bar","us":42,"failures":["expected: 2\n     got: 1"],"details":[{"message":"expected: 2\n     got: 1","file":"res://test/foo.gd","line":9,"function":"test_bar","code":"assert_eq(total, 2)","locals":[{"name":"total","value":"1"}]}]}
 {"event":"test_error","name":"test_bar","message":"SCRIPT ERROR: ..."}
 {"event":"test_skip","name":"test_bar","message":""}
 {"event":"test_pending","name":"test_bar","message":"not implemented"}

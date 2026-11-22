@@ -592,7 +592,7 @@ static func expect_eq(actual: Variant, expected: Variant, msg: String = "") -> b
 	if msg != "":
 		return expect(false, _interpolate_msg(msg, actual, expected))
 	var diff := _diff_message(actual, expected)
-	return expect(false, diff if diff != "" else "expected %s == %s" % [str(expected), str(actual)])
+	return expect(false, diff if diff != "" else _expected_got(expected, actual))
 
 static func expect_ne(actual: Variant, not_expected: Variant, msg: String = "") -> bool:
 	if actual != not_expected:
@@ -1310,6 +1310,12 @@ static func assert_called_in_order(mock_obj: Object, method_names: Array, msg: S
 
 # Substitutes {actual} and {expected} in a custom message string.
 # Falls back to the raw message when neither placeholder is present.
+# "expected: "abis"" then "     got: "abi"": the values as written in code, so
+# "1" and 1, or 1 and 1.0, can be told apart.
+static func _expected_got(expected: Variant, actual: Variant) -> String:
+	var worker: GDScript = load("res://addons/gdtest/gdtest_worker.gd")
+	return "expected: %s\n     got: %s" % [worker.value_text(expected), worker.value_text(actual)]
+
 static func _interpolate_msg(msg: String, actual: Variant, expected: Variant) -> String:
 	return msg.replace("{actual}", str(actual)).replace("{expected}", str(expected))
 

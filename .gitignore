@@ -14,7 +14,7 @@ export.cfg
 export_presets.cfg
 
 # macOS
-.DS_Store
+**/.DS_STORE
 
 # Extension build artifacts
 *.vsix
