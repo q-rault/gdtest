@@ -850,9 +850,20 @@ async fn run_pool(
     let mut items: Vec<pool::TestItem> = explicit_tests;
     for file in &files {
         let abs = gdtest_analysis::res_to_abs(file, &project_abs)?;
-        let mut entries = gdtest_analysis::list_test_entries_in(&abs).unwrap_or_default();
+        let mut entries = match gdtest_analysis::list_test_entries_in(&abs) {
+            Ok(entries) => entries,
+            Err(e) => {
+                eprintln!("gdtest: could not read {file}: {e:#}");
+                continue;
+            }
+        };
         if entries.is_empty() {
-            eprintln!("gdtest: no test functions found in {file} (parse error or empty file)");
+            // Discovery reads past syntax errors, so a file without tests is
+            // one with none: a helper or a mock, beside the tests, says
+            // nothing. A file named as a test script is worth a word.
+            if is_test_script_name(file) {
+                eprintln!("gdtest: no test functions (test_*) found in {file}");
+            }
             continue;
         }
         if !include_tags.is_empty() || !exclude_tags.is_empty() {
@@ -1408,9 +1419,31 @@ fn normalize_res(path: &str, project_abs: &std::path::Path) -> anyhow::Result<St
     gdtest_analysis::to_res_path(&abs, project_abs)
 }
 
+/// Whether `file` is named as a test script: `test_*.gd`, `*_test.gd` or
+/// `*.test.gd`, rather than a helper or a mock kept beside the tests.
+fn is_test_script_name(file: &str) -> bool {
+    let name = file.rsplit('/').next().unwrap_or(file);
+    let Some(stem) = name.strip_suffix(".gd") else {
+        return false;
+    };
+    stem.starts_with("test_") || stem.ends_with("_test") || stem.ends_with(".test")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_files_named_as_tests_are_test_scripts() {
+        assert!(is_test_script_name("res://test/test_player.gd"));
+        assert!(is_test_script_name(
+            "res://test/manual/display_click_test.gd"
+        ));
+        assert!(is_test_script_name("res://src/player.test.gd"));
+        assert!(!is_test_script_name("res://test/helpers/hud_assertions.gd"));
+        assert!(!is_test_script_name("res://test/mocks/mock_combatant.gd"));
+        assert!(!is_test_script_name("res://test/test_data.tres"));
+    }
 
     fn parse_matches(args: &[&str]) -> (Cli, ArgMatches) {
         let matches = Cli::command().try_get_matches_from(args).unwrap();

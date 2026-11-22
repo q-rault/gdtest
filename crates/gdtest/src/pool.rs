@@ -579,15 +579,14 @@ async fn run_one_test(
             }
             _ = tokio::time::sleep_until(deadline) => {
                 let name = item.func.clone();
-                let msg = format!("timed out after {}ms", timeout_ms);
+                let msg = format!("timed out after {timeout_ms}ms, the limit for a test (--timeout)");
                 // Return as a result (not a crash re-enqueue) so the normal
-                // retries budget applies. Worker still needs respawning (crashed=true)
-                // but the item is NOT silently re-queued.
-                let _ = ev_tx.send(PoolEvent::WorkerCrashed {
-                    worker: id,
-                    current_file: Some(item.display_script.clone()),
-                    message: msg.clone(),
-                });
+                // retries budget applies. The item is NOT silently re-queued.
+                //
+                // The worker still restarts (crashed=true), though it didn't
+                // crash: a test can't be cancelled mid-`await`, and what it
+                // left running would act on the next test. So it's no
+                // WorkerCrashed: the test's error says what happened.
                 return (true, Some(PoolEvent::TestError {
                     worker: id, file: item.display_script.clone(), name, message: msg,
                 }), stderr_rx);
