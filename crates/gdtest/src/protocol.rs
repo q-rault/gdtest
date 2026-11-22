@@ -49,6 +49,10 @@ pub enum Command {
         script: String,
     },
     Reset,
+    /// The running test went past its time limit: the worker's waits return at
+    /// once, so the test ends and the worker can take the next one. Read by the
+    /// worker's stdin thread as it comes, not queued behind the test.
+    Cancel,
     Shutdown,
 }
 
@@ -150,6 +154,8 @@ mod tests {
     #[test]
     fn shutdown_serializes() {
         round_trip_cmd(Command::Shutdown, r#"{"cmd":"shutdown"}"#);
+        // The worker matches this exact line, so its shape must not change.
+        round_trip_cmd(Command::Cancel, r#"{"cmd":"cancel"}"#);
     }
 
     #[test]

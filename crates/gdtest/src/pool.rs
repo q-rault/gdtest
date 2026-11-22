@@ -133,7 +133,8 @@ pub struct PoolOptions {
     pub reporter: Reporter,
     pub isolation: IsolationMode,
     /// Per-test timeout in milliseconds. A test that doesn't produce a result
-    /// event within this window is reported as an error and its worker respawned.
+    /// event within this window is reported as an error, and cancelled; its
+    /// worker is respawned only when it doesn't end within `CANCEL_GRACE`.
     pub timeout_ms: u64,
     /// Stop dispatching new tests after the first failure or error.
     pub fail_fast: bool,
@@ -428,7 +429,16 @@ async fn run_one_test(
     let mut pre_start_errors: Vec<String> = Vec::new();
     let mut saw_start = false;
     let now = tokio::time::Instant::now();
-    let deadline = now + Duration::from_millis(timeout_ms);
+    let mut deadline = now + Duration::from_millis(timeout_ms);
+    // Set once the test went past its limit and the worker was told to cancel
+    // it: what it reports from then on is dropped for the timeout error.
+    let mut cancelled = false;
+    let timed_out = || PoolEvent::TestError {
+        worker: id,
+        file: item.display_script.clone(),
+        name: item.func.clone(),
+        message: format!("timed out after {timeout_ms}ms, the limit for a test (--timeout)"),
+    };
     let warn_deadline = timeout_warn_ms.map(|ms| now + Duration::from_millis(ms));
     let mut warn_fired = false;
 
@@ -457,7 +467,11 @@ async fn run_one_test(
                             PoolEvent::TestError { worker: id, file: item.display_script.clone(), name: name.clone(), message: msg }
                         };
                         // Parameterized case result: forward and keep looping.
-                        if name.contains('[') {
+                        if cancelled {
+                            if !name.contains('[') {
+                                return (false, Some(timed_out()), stderr_rx);
+                            }
+                        } else if name.contains('[') {
                             let _ = ev_tx.send(ev);
                             runtime_errors.clear();
                         } else {
@@ -473,7 +487,11 @@ async fn run_one_test(
                             details,
                         };
                         // Parameterized case result: forward and keep looping.
-                        if name.contains('[') {
+                        if cancelled {
+                            if !name.contains('[') {
+                                return (false, Some(timed_out()), stderr_rx);
+                            }
+                        } else if name.contains('[') {
                             let _ = ev_tx.send(ev);
                         } else {
                             return (false, Some(ev), stderr_rx);
@@ -492,19 +510,29 @@ async fn run_one_test(
                             worker: id, file: item.display_script.clone(), name: name.clone(), message,
                         };
                         // Parameterized case result: forward and keep looping.
-                        if name.contains('[') {
+                        if cancelled {
+                            if !name.contains('[') {
+                                return (false, Some(timed_out()), stderr_rx);
+                            }
+                        } else if name.contains('[') {
                             let _ = ev_tx.send(ev);
                         } else {
                             return (false, Some(ev), stderr_rx);
                         }
                     }
                     Ok(Event::TestPending { name, message }) => {
+                        if cancelled {
+                            return (false, Some(timed_out()), stderr_rx);
+                        }
                         let ev = PoolEvent::TestPending {
                             worker: id, file: item.display_script.clone(), name, message,
                         };
                         return (false, Some(ev), stderr_rx);
                     }
                     Ok(Event::TestSkip { name, message }) => {
+                        if cancelled {
+                            return (false, Some(timed_out()), stderr_rx);
+                        }
                         let ev = PoolEvent::TestSkip {
                             worker: id, file: item.display_script.clone(), name, message,
                         };
@@ -513,7 +541,7 @@ async fn run_one_test(
                     // Parameterized batch: individual case results are forwarded
                     // directly; TestBatchDone signals the RunTest is complete.
                     Ok(Event::TestBatchDone) => {
-                        return (false, None, stderr_rx);
+                        return (false, cancelled.then(timed_out), stderr_rx);
                     }
                     Ok(Event::Uses { paths }) => {
                         let _ = ev_tx.send(PoolEvent::Uses {
@@ -578,22 +606,29 @@ async fn run_one_test(
                 );
             }
             _ = tokio::time::sleep_until(deadline) => {
-                let name = item.func.clone();
-                let msg = format!("timed out after {timeout_ms}ms, the limit for a test (--timeout)");
-                // Return as a result (not a crash re-enqueue) so the normal
-                // retries budget applies. The item is NOT silently re-queued.
+                // Past the limit, the worker is first asked to cancel the
+                // test: its waits return at once, the test ends, and the
+                // worker takes the next one. Restarting Godot costs seconds.
+                if !cancelled && worker.send(&Command::Cancel).await.is_ok() {
+                    cancelled = true;
+                    deadline = tokio::time::Instant::now() + CANCEL_GRACE;
+                    continue;
+                }
+                // Still running: it awaits something no wait of the harness
+                // stops (`await some_signal`), or never awaits at all. The
+                // worker restarts (crashed=true), though it didn't crash, so
+                // it's no WorkerCrashed: the test's error says what happened.
                 //
-                // The worker still restarts (crashed=true), though it didn't
-                // crash: a test can't be cancelled mid-`await`, and what it
-                // left running would act on the next test. So it's no
-                // WorkerCrashed: the test's error says what happened.
-                return (true, Some(PoolEvent::TestError {
-                    worker: id, file: item.display_script.clone(), name, message: msg,
-                }), stderr_rx);
+                // Returned as a result (not a crash re-enqueue) so the normal
+                // retries budget applies. The item is NOT silently re-queued.
+                return (true, Some(timed_out()), stderr_rx);
             }
         }
     }
 }
+
+/// How long a test told to cancel has to end before its worker is restarted.
+const CANCEL_GRACE: Duration = Duration::from_millis(2000);
 
 async fn try_respawn(
     worker: &mut Worker,

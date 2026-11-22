@@ -87,6 +87,19 @@ the pool:
 
 A crash in one test never stops other tests from running.
 
+## Timeouts
+
+A test still running after `--timeout` is reported as an error, and the pool
+tells its worker to cancel it. From then on, every wait of the harness
+(`Gdt.wait_physics_frames`, `Gdt.wait_until`, `Gdt.assert_signal`, and the
+others) returns at once: the test runs to its end, its `after_each` cleans up,
+and the worker takes the next test. What the test reports is ignored.
+
+A test that awaits something the harness doesn't control, such as
+`await some_signal` or `await get_tree().process_frame`, doesn't end that way.
+After two more seconds, the pool restarts its worker, as after a crash, though
+it isn't reported as one.
+
 ## Stderr correlation
 
 On Unix, Godot's stderr is attached to a PTY so the worker sees a TTY and

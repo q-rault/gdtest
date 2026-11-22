@@ -41,7 +41,7 @@ wins over the config file.
 |---|---|---|---|
 | `-j, --jobs <N>` | `GDTEST_JOBS` | CPU count | Parallel worker count (clamped by test count) |
 | `--isolation <MODE>` | `GDTEST_ISOLATION` | `file` | `file` \| `test` (see [below](#isolation-modes)) |
-| `--timeout <MS>` | `GDTEST_TIMEOUT` | `5000` | Per-test timeout; a test that exceeds it is an error and its worker restarts |
+| `--timeout <MS>` | `GDTEST_TIMEOUT` | `5000` | Per-test timeout; a test that exceeds it is an error. It is cancelled, and its worker restarts only if it does not end ([Timeouts](/docs/architecture#timeouts)) |
 | `--timeout-warn <MS>` | `GDTEST_TIMEOUT_WARN` | off | Warn about slow tests without stopping them; must be below `--timeout` |
 | `--fail-fast` | `GDTEST_FAIL_FAST` | off | Stop after the first failure or error |
 | `--retries <N>` | `GDTEST_RETRIES` | `0` | Re-run a failing test up to N more times; timeouts and crashes are not retried |

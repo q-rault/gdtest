@@ -169,6 +169,27 @@ run_grep "a SCRIPT ERROR names its location" "script error: .*xtest_script_error
 run_grep "a SCRIPT ERROR is added to an existing failure" "script error: " \
     "$GDTEST" "$FIXTURES/xtest_script_error_after_failure.gd" --reporter tap
 
+# --timeout: a test past the limit is cancelled and its worker kept when it
+# waits through the harness; restarted when it awaits something else.
+TIMEOUT_OUT="$("$GDTEST" "$FIXTURES/xtest_timeout.gd" -j 1 --timeout 1000 --reporter tap 2>&1 || true)"
+for pattern in \
+    "^not ok.*test_a_waits_past_the_limit" \
+    "^ok.*test_b_runs_on_the_same_worker" \
+    "^not ok.*test_c_awaits_a_signal_never_emitted" \
+    "^ok.*test_d_runs_on_a_new_worker" \
+    "worker_crashes=0"; do
+    if grep -qE "$pattern" <<< "$TIMEOUT_OUT"; then
+        ok "--timeout: $pattern"
+    else
+        fail "--timeout: $pattern"
+    fi
+done
+if [[ "$(grep -c "timed out after 1000ms" <<< "$TIMEOUT_OUT")" == 2 ]]; then
+    ok "--timeout: both tests say they timed out"
+else
+    fail "--timeout: both tests say they timed out"
+fi
+
 # --reporter junit
 run_grep "--reporter junit produces XML" "<testsuites" \
     "$GDTEST" "$FIXTURES/xtest_skip.gd" --reporter junit

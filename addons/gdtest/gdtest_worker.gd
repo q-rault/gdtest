@@ -80,6 +80,11 @@ var _cmd_queue: Array = []
 var _cmd_mutex: Mutex = Mutex.new()
 var _stdin_thread: Thread = null
 var _stop_requested: bool = false
+# Set by the stdin thread when gdtest sends `cancel`: the running test went past
+# its time limit. Every wait below then returns at once, so the test runs to its
+# end, its `after_each` cleans up, and this worker can take the next test
+# instead of being restarted. gdtest no longer counts the test's result.
+var _cancelled: bool = false
 var _processing: bool = false
 var _world_counter: int = 0
 # Plugin registries loaded from GDTEST_PLUGINS env var.
@@ -183,6 +188,10 @@ func _stdin_reader_loop() -> void:
 			continue
 		if trimmed.contains('"shutdown"'):
 			shutdown_sent = true
+		# Not queued: the test it stops is still running.
+		if trimmed == '{"cmd":"cancel"}':
+			_cancelled = true
+			continue
 		_cmd_mutex.lock()
 		_cmd_queue.append(trimmed)
 		_cmd_mutex.unlock()
@@ -388,6 +397,8 @@ func assert_snapshot(actual: Variant, snap_name: String, script_path: String) ->
 # during the harness's main loop — this helper avoids the boilerplate.
 func simulate_physics_frames(n: int = 1) -> void:
 	for i in n:
+		if _cancelled:
+			return
 		await physics_frame
 
 # Awaits enough physics frames to cover `seconds` at the project's
@@ -399,10 +410,13 @@ func simulate_physics_seconds(seconds: float) -> void:
 # Awaits the next process frame. Rarely needed — prefer physics_frame for
 # deterministic tests.
 func simulate_process_frame() -> void:
-	await process_frame
+	if not _cancelled:
+		await process_frame
 
 func simulate_process_frames_n(n: int) -> void:
 	for i in n:
+		if _cancelled:
+			return
 		await process_frame
 
 func create_test_world() -> Object:
@@ -417,7 +431,7 @@ func create_test_world() -> Object:
 # elapses. Records a test failure on timeout.
 func wait_until(predicate: Callable, timeout_ms: float = 2000.0) -> void:
 	var deadline: int = Time.get_ticks_msec() + int(timeout_ms)
-	while not predicate.call():
+	while not predicate.call() and not _cancelled:
 		if Time.get_ticks_msec() >= deadline:
 			expect(false, "wait_until timed out after %.0fms — condition never became true" % timeout_ms)
 			return
@@ -427,7 +441,7 @@ func wait_until(predicate: Callable, timeout_ms: float = 2000.0) -> void:
 # elapses. Records a test failure on timeout.
 func wait_while(predicate: Callable, timeout_ms: float = 2000.0) -> void:
 	var deadline: int = Time.get_ticks_msec() + int(timeout_ms)
-	while predicate.call():
+	while predicate.call() and not _cancelled:
 		if Time.get_ticks_msec() >= deadline:
 			expect(false, "wait_while timed out after %.0fms — condition never became false" % timeout_ms)
 			return
@@ -504,6 +518,8 @@ func _release_test_instance(instance: Object, instance_in_tree: bool) -> void:
 # ── Test dispatch ──────────────────────────────────────────────────────────
 
 func _run_test(script_path: String, func_name: String) -> void:
+	# A `cancel` read before this test's command was for the test before it.
+	_cancelled = false
 	_current_failures.clear()
 	_current_details.clear()
 	_pending_msg = ""
@@ -840,7 +856,7 @@ func watch_signal_count(node: Object, sig: String, expected_count: int, timeout_
 	node.connect(sig, cb)
 	var timer := create_timer(timeout_ms / 1000.0)
 	var frames := 0
-	while state.count < expected_count and timer.time_left > 0.0:
+	while state.count < expected_count and timer.time_left > 0.0 and not _cancelled:
 		await process_frame
 		frames += 1
 	if node.is_connected(sig, cb):
@@ -857,7 +873,7 @@ func watch_signal_with_args(node: Object, sig: String, expected_args: Array, tim
 	node.connect(sig, cb, CONNECT_ONE_SHOT)
 	var timer := create_timer(timeout_ms / 1000.0)
 	var frames := 0
-	while not state.fired and timer.time_left > 0.0:
+	while not state.fired and timer.time_left > 0.0 and not _cancelled:
 		await process_frame
 		frames += 1
 	if not state.fired:
@@ -878,7 +894,7 @@ func watch_signal(node: Object, sig: String, timeout_ms: float = 1000.0, context
 	node.connect(sig, cb, CONNECT_ONE_SHOT)
 	var timer := create_timer(timeout_ms / 1000.0)
 	var frames := 0
-	while not state.fired:
+	while not state.fired and not _cancelled:
 		await process_frame
 		frames += 1
 		if timer.time_left <= 0.0:
@@ -896,7 +912,7 @@ func watch_no_signal(node: Object, sig: String, timeout_ms: float = 200.0) -> vo
 	var cb := func(_a = null, _b = null, _c = null, _d = null): state.fired = true
 	node.connect(sig, cb, CONNECT_ONE_SHOT)
 	var timer := create_timer(timeout_ms / 1000.0)
-	while not state.fired and timer.time_left > 0.0:
+	while not state.fired and timer.time_left > 0.0 and not _cancelled:
 		await process_frame
 	if state.fired:
 		_current_failures.append("signal '%s' was unexpectedly emitted on %s" % [sig, _node_desc(node)])

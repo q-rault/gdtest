@@ -80,7 +80,8 @@ struct Cli {
     no_auto_import: bool,
 
     /// Per-test timeout in milliseconds. A test that produces no result
-    /// within this window is reported as an error and its worker is respawned.
+    /// within this window is reported as an error. Its worker cancels it and
+    /// takes the next test; it restarts only when the test doesn't end.
     /// [default: 5000] [env: GDTEST_TIMEOUT]
     #[arg(long, env = "GDTEST_TIMEOUT", global = true)]
     timeout: Option<u64>,
