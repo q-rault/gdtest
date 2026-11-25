@@ -123,7 +123,8 @@ fn write_asset(target: &Path, contents: &str, force: bool) -> Result<bool> {
     if target.exists() {
         let current =
             fs::read_to_string(target).with_context(|| format!("reading {}", target.display()))?;
-        if current == contents {
+        // Git may check it out with CRLF line endings: that's not an edit.
+        if current.lines().eq(contents.lines()) {
             return Ok(false);
         }
         if !force {
@@ -211,6 +212,25 @@ mod tests {
                 asset.rel_path
             );
         }
+    }
+
+    #[test]
+    fn leaves_a_file_with_crlf_line_endings_alone() {
+        let dir = temp_project("crlf");
+        let options = || InitOptions {
+            project_path: dir.display().to_string(),
+            editor: false,
+            force: false,
+        };
+        run(options()).unwrap();
+        let file = dir.join("addons/gdtest/gdt.gd");
+        let crlf = fs::read_to_string(&file).unwrap().replace('\n', "\r\n");
+        fs::write(&file, &crlf).unwrap();
+
+        run(options()).unwrap();
+
+        assert_eq!(fs::read_to_string(&file).unwrap(), crlf);
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
