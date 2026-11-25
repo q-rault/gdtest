@@ -47,6 +47,9 @@ pub struct Worker {
     ///
     /// `None` once taken by the pool for in-flight correlation.
     pub stderr: Option<mpsc::UnboundedReceiver<String>>,
+    /// Whether Godot printed anything yet: its banner comes first, so a Godot
+    /// that ended without it never got as far as the project.
+    pub printed: bool,
 }
 
 #[cfg(windows)]
@@ -140,6 +143,7 @@ impl Worker {
             stdout,
             log_path,
             stderr: Some(stderr_rx),
+            printed: false,
         })
     }
 
@@ -169,6 +173,7 @@ impl Worker {
     /// the worker's stdout closes — callers treat that as a crash.
     pub async fn next_event(&mut self) -> Result<Event> {
         while let Some(line) = self.stdout.next_line().await? {
+            self.printed = true;
             let Some(payload) = line.strip_prefix(GDTEST_OUT_PREFIX) else {
                 continue;
             };
@@ -189,6 +194,15 @@ impl Worker {
                 return Ok(ev);
             }
         }
+    }
+
+    /// How Godot ended, once its stdout closed. It says why a worker died when
+    /// Godot has no log yet. `None` when it still runs.
+    pub async fn exit_status(&mut self) -> Option<std::process::ExitStatus> {
+        tokio::time::timeout(std::time::Duration::from_secs(2), self.child.wait())
+            .await
+            .ok()?
+            .ok()
     }
 
     pub async fn shutdown(mut self) -> Result<std::process::ExitStatus> {

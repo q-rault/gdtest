@@ -274,28 +274,8 @@ async fn worker_loop(
     timeout_ms: u64,
     timeout_warn_ms: Option<u64>,
 ) {
-    let mut worker = match Worker::spawn(&cfg) {
+    let mut worker = match start_worker(&cfg, "initial").await {
         Ok(w) => w,
-        Err(e) => {
-            let _ = ev_tx.send(PoolEvent::WorkerCrashed {
-                worker: id,
-                current_file: None,
-                message: format!("spawn failed: {e}"),
-            });
-            return;
-        }
-    };
-    let mut stderr_rx = worker.stderr.take().expect("worker stderr channel");
-
-    match wait_for_ready(
-        &mut worker,
-        &mut stderr_rx,
-        Duration::from_secs(30),
-        "initial",
-    )
-    .await
-    {
-        Ok(()) => {}
         Err(message) => {
             let _ = ev_tx.send(PoolEvent::WorkerCrashed {
                 worker: id,
@@ -304,7 +284,8 @@ async fn worker_loop(
             });
             return;
         }
-    }
+    };
+    let mut stderr_rx = worker.stderr.take().expect("worker stderr channel");
 
     loop {
         if cancel.load(Ordering::SeqCst) {
@@ -551,6 +532,7 @@ async fn run_one_test(
                     }
                     Ok(_) => {}
                     Err(e) => {
+                        let status = exit_note(worker).await;
                         let name = if saw_start { item.func.clone() } else {
                             format!("{} (before TestStart)", item.func)
                         };
@@ -558,10 +540,10 @@ async fn run_one_test(
                         stderr_context.extend(pre_start_errors.iter().cloned());
                         stderr_context.extend(runtime_errors.iter().cloned());
                         let msg = if stderr_context.is_empty() {
-                            format!("worker crashed during test: {e}")
+                            format!("worker crashed during test: {e}{status}")
                         } else {
                             format!(
-                                "worker crashed during test (stderr: {}): {e}",
+                                "worker crashed during test (stderr: {}): {e}{status}",
                                 stderr_context.join(" | "),
                             )
                         };
@@ -572,7 +554,7 @@ async fn run_one_test(
                         let _ = ev_tx.send(PoolEvent::WorkerCrashed {
                             worker: id,
                             current_file: Some(item.display_script.clone()),
-                            message: format!("stdout closed mid-test: {e}"),
+                            message: format!("stdout closed mid-test: {e}{status}"),
                         });
                         return (true, None, stderr_rx);
                     }
@@ -636,34 +618,58 @@ async fn try_respawn(
     id: usize,
     ev_tx: &mpsc::UnboundedSender<PoolEvent>,
 ) -> bool {
-    match Worker::spawn(cfg) {
-        Ok(mut w) => {
-            let mut stderr_rx = w.stderr.take().expect("worker stderr channel");
-            match wait_for_ready(&mut w, &mut stderr_rx, Duration::from_secs(30), "respawn").await {
-                Ok(()) => {
-                    w.stderr = Some(stderr_rx);
-                }
-                Err(message) => {
-                    let _ = ev_tx.send(PoolEvent::WorkerCrashed {
-                        worker: id,
-                        current_file: None,
-                        message,
-                    });
-                    return false;
-                }
-            }
+    match start_worker(cfg, "respawn").await {
+        Ok(w) => {
             *worker = w;
             true
         }
-        Err(e) => {
+        Err(message) => {
             let _ = ev_tx.send(PoolEvent::WorkerCrashed {
                 worker: id,
                 current_file: None,
-                message: format!("respawn failed: {e}"),
+                message,
             });
             false
         }
     }
+}
+
+/// How many times a worker is started before giving up on it.
+const START_ATTEMPTS: u32 = 3;
+
+/// Starts a worker and waits until it's ready for tests.
+///
+/// On Windows a system DLL sometimes fails to load while Godot starts (about
+/// one start in 500, exit code 0xc06d007f), before it prints or logs anything.
+/// Such a Godot is started again: no test ran, and the project isn't to blame.
+async fn start_worker(cfg: &Config, phase: &str) -> Result<Worker, String> {
+    let mut attempt = 1;
+    loop {
+        let mut worker = Worker::spawn(cfg).map_err(|e| match phase {
+            "initial" => format!("spawn failed: {e}"),
+            _ => format!("{phase} failed: {e}"),
+        })?;
+        let mut stderr_rx = worker.stderr.take().expect("worker stderr channel");
+        let ready =
+            wait_for_ready(&mut worker, &mut stderr_rx, Duration::from_secs(30), phase).await;
+        match ready {
+            Ok(()) => {
+                worker.stderr = Some(stderr_rx);
+                return Ok(worker);
+            }
+            Err(NotReady { died: true, .. }) if !worker.printed && attempt < START_ATTEMPTS => {
+                attempt += 1;
+            }
+            Err(failure) => return Err(failure.message),
+        }
+    }
+}
+
+/// Why a worker isn't ready for tests.
+struct NotReady {
+    message: String,
+    /// Godot ended by itself.
+    died: bool,
 }
 
 async fn wait_for_ready(
@@ -671,40 +677,30 @@ async fn wait_for_ready(
     stderr_rx: &mut mpsc::UnboundedReceiver<String>,
     timeout: Duration,
     phase: &str,
-) -> Result<(), String> {
+) -> Result<(), NotReady> {
     let deadline = tokio::time::Instant::now() + timeout;
     let mut startup_stderr: Vec<String> = Vec::new();
+    let not_ready = |died, reason: String, startup_stderr: &[String], worker: &Worker| NotReady {
+        message: format_ready_failure(reason, startup_stderr, worker.log_path.as_deref()),
+        died,
+    };
     loop {
         tokio::select! {
             ev = worker.next_event() => {
                 match ev {
                     Ok(Event::Ready { harness_version, godot_version }) => {
                         if let Err(e) = crate::compat::check_harness_version(harness_version.as_deref()) {
-                            return Err(format_ready_failure(
-                                phase,
-                                e.to_string(),
-                                &startup_stderr,
-                                worker.log_path.as_deref(),
-                            ));
+                            return Err(not_ready(false, e.to_string(), &startup_stderr, worker));
                         }
                         if let Err(e) = crate::compat::check_godot_version(godot_version.as_deref()) {
-                            return Err(format_ready_failure(
-                                phase,
-                                e.to_string(),
-                                &startup_stderr,
-                                worker.log_path.as_deref(),
-                            ));
+                            return Err(not_ready(false, e.to_string(), &startup_stderr, worker));
                         }
                         return Ok(());
                     }
                     Ok(_) => {}
                     Err(e) => {
-                        return Err(format_ready_failure(
-                            phase,
-                            format!("{phase} Ready never arrived: {e}"),
-                            &startup_stderr,
-                            worker.log_path.as_deref(),
-                        ));
+                        let status = exit_note(worker).await;
+                        return Err(not_ready(true, format!("{phase} Ready never arrived: {e}{status}"), &startup_stderr, worker));
                     }
                 }
             }
@@ -714,17 +710,20 @@ async fn wait_for_ready(
                 }
             }
             _ = tokio::time::sleep_until(deadline) => {
-                return Err(format_ready_failure(
-                    phase,
-                    format!(
+                return Err(not_ready(false, format!(
                         "{phase} Ready timed out after {}s (Godot worker hung during startup)",
                         timeout.as_secs()
-                    ),
-                    &startup_stderr,
-                    worker.log_path.as_deref(),
-                ));
+                    ), &startup_stderr, worker));
             }
         }
+    }
+}
+
+/// How the worker's Godot ended, to add to the error its closed stdout gave.
+async fn exit_note(worker: &mut Worker) -> String {
+    match worker.exit_status().await {
+        Some(status) => format!(" (Godot ended with {status})"),
+        None => " (Godot still runs)".to_string(),
     }
 }
 
@@ -739,7 +738,6 @@ fn push_recent_line(lines: &mut Vec<String>, line: String) {
 }
 
 fn format_ready_failure(
-    _phase: &str,
     base: String,
     startup_stderr: &[String],
     log_path: Option<&std::path::Path>,
@@ -752,4 +750,98 @@ fn format_ready_failure(
         parts.push(format!("godot log: {}", path.display()));
     }
     parts.join(" | ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::worker::DisplayMode;
+
+    /// A stand-in for Godot whose first `deaths` starts end before it's ready,
+    /// after a banner when `banner`. Each start adds a line to `starts`.
+    fn fake_godot(name: &str, deaths: u32, banner: bool) -> (Config, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!("gdtest-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let ready = format!(
+            r#"GDTEST_OUT:{{"event":"ready","godot_version":"4.7.0","harness_version":"{}"}}"#,
+            env!("CARGO_PKG_VERSION")
+        );
+        let banner = if banner { "echo Godot Engine" } else { "" };
+        let (file, body) = if cfg!(windows) {
+            (
+                "godot.cmd",
+                format!(
+                    r#"@echo off
+cd /d "%~dp0"
+{banner}
+echo x>> starts
+for /f %%c in ('%SystemRoot%\System32\find.exe /c "x" ^< starts') do if %%c LEQ {deaths} exit 5
+echo {ready}
+"#
+                ),
+            )
+        } else {
+            (
+                "godot.sh",
+                format!(
+                    r#"#!/bin/sh
+cd "$(dirname "$0")"
+{banner}
+echo x >> starts
+[ "$(wc -l < starts)" -le {deaths} ] && exit 5
+echo '{ready}'
+"#
+                ),
+            )
+        };
+        let exe = dir.join(file);
+        std::fs::write(&exe, body).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let cfg = Config {
+            godot_exe: exe.display().to_string(),
+            project_path: dir.display().to_string(),
+            harness: "addons/gdtest/gdtest_worker.gd".to_string(),
+            display_mode: DisplayMode::Headless,
+            update_snapshots: false,
+            seed: None,
+            plugins: Vec::new(),
+        };
+        (cfg, dir)
+    }
+
+    fn starts(dir: &std::path::Path) -> usize {
+        let starts = std::fs::read_to_string(dir.join("starts")).unwrap();
+        let _ = std::fs::remove_dir_all(dir);
+        starts.lines().count()
+    }
+
+    #[tokio::test]
+    async fn a_godot_that_ends_before_it_prints_is_started_again() {
+        let (cfg, dir) = fake_godot("start-again", 2, false);
+        let worker = start_worker(&cfg, "respawn").await;
+        assert!(worker.is_ok(), "{:?}", worker.err());
+        assert_eq!(starts(&dir), 3);
+    }
+
+    #[tokio::test]
+    async fn a_godot_that_never_starts_is_reported_with_its_exit_code() {
+        let (cfg, dir) = fake_godot("never-starts", 9, false);
+        let message = start_worker(&cfg, "respawn").await.err().unwrap();
+        assert!(message.contains("respawn Ready never arrived"), "{message}");
+        assert!(message.contains("(Godot ended with exit"), "{message}");
+        assert!(message.contains(": 5)"), "{message}");
+        assert_eq!(starts(&dir), START_ATTEMPTS as usize);
+    }
+
+    #[tokio::test]
+    async fn a_project_that_fails_to_load_is_not_started_again() {
+        let (cfg, dir) = fake_godot("broken-project", 9, true);
+        assert!(start_worker(&cfg, "initial").await.is_err());
+        assert_eq!(starts(&dir), 1);
+    }
 }
